@@ -132,14 +132,13 @@ with tab1:
                 st.warning("15bp 이상의 서열을 입력해 주십시오.")
             else:
                 base_path = os.getcwd() 
-                temp_query_fa = os.path.join(base_path, "temp_query")
+                temp_query = os.path.join(base_path, "temp_query.fa")
+                with open(temp_query, "w") as f:
+                    f.write(f">Query\n{query_seq}")
                 db_path = os.path.join(base_path, "pwn_db") # GitHub에 올린 DB 폴더 이름
                 result_csv = os.path.join(base_path, "blast_result.csv")
         
-                
-                # 2. blastn 실행 파일의 전체 경로 (환경 변수 에러 방지)
-                # 만약 설치 경로가 다르다면 이 부분을 실제 blastn.exe가 있는 경로로 바꾸세요.
-                blast_exe = r"C:\Program Files\NCBI\blast-2.16.0+\bin\blastn.exe" 
+        
                 
                 with st.spinner("로컬 데이터베이스 검색 중..."):
                     try:
