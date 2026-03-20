@@ -135,7 +135,8 @@ with tab1:
                 temp_query = os.path.join(base_path, "temp_query.fa")
                 with open(temp_query, "w") as f:
                     f.write(f">Query\n{query_seq}")
-                db_path = os.path.join(base_path, "pwn_db") # GitHub에 올린 DB 폴더 이름
+                db_folder = os.path.join(base_path, "pwn_db")
+                db_path = os.path.join(db_folder, "pwn_db")
                 result_csv = os.path.join(base_path, "blast_result.csv")
         
         
