@@ -122,53 +122,61 @@ with tab1:
     
     with c1_in:
         st.subheader("Sequence Search")
-        # 검색할 서열 입력 (프라이머 또는 유전자 조각)
         query_seq = st.text_area("dsRNA Primer Sequence input", height=150, 
                                  placeholder="분석할 서열(ATGC...)을 입력하십시오.", 
                                  key="pwn_local_search")
         
+        # [추가] FASTA 헤더에서 ID와 설명(Description)을 추출하는 함수
+        @st.cache_data
+        def get_fasta_descriptions():
+            desc_dict = {}
+            # 성환 님의 저장소에 있는 원본 FASTA 파일 이름을 확인하세요 (예: pwn_cds.fa)
+            fasta_file = os.path.join(os.getcwd(), "pwn_db", "pwn_cds.fa") 
+            if os.path.exists(fasta_file):
+                for record in SeqIO.parse(fasta_file, "fasta"):
+                    # ID (BAE48369.1)를 키로, 전체 헤더를 값으로 저장
+                    desc_dict[record.id] = record.description.split(' ', 1)[1] if ' ' in record.description else "No description"
+            return desc_dict
+
         if st.button("RUN LOCAL BLAST", use_container_width=True):
             if not query_seq or len(query_seq) < 15:
                 st.warning("15bp 이상의 서열을 입력해 주십시오.")
             else:
                 base_path = os.getcwd() 
                 temp_query = os.path.join(base_path, "temp_query.fa")
-                result_csv = os.path.join(base_path, "blast_result.csv")
-                # pwn_db 폴더 안의 pwn_db 인덱스 파일을 가리킴
                 db_path = os.path.join(base_path, "pwn_db", "pwn_db") 
+                result_csv = os.path.join(base_path, "blast_result.csv")
 
-                # --- [핵심 수정: 입력한 서열을 실제 파일로 저장해야 BLAST가 읽습니다] ---
                 with open(temp_query, "w") as f:
                     f.write(f">Query\n{query_seq}")
-                # ------------------------------------------------------------------
 
-                with st.spinner("로컬 데이터베이스 검색 중..."):
+                with st.spinner("로컬 데이터베이스 검색 및 매핑 중..."):
                     try:
-                        # 3. BLAST 실행
-                        cmd = [
-                            "blastn",
-                            "-query", temp_query,
-                            "-db", db_path,
-                            "-out", result_csv,
-                            "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                            "-task", "blastn-short"
-                        ]
-                        
-                        # shell=True를 빼는 것이 서버(Linux)에서 더 안정적입니다.
+                        cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
+                               "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                               "-task", "blastn-short"]
                         subprocess.run(cmd, check=True)
                         
-                        # 4. 결과 출력
                         if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
                             df = pd.read_csv(result_csv, names=[
                                 "Query", "Locus ID", "Identity(%)", "Length", 
                                 "Mismatch", "Gaps", "Q_Start", "Q_End", 
                                 "S_Start", "S_End", "E-value", "BitScore"
                             ])
-                            st.success(f" 검색 완료: {len(df)}개의 결과를 찾았습니다.")
-                            st.dataframe(df, use_container_width=True)
-                        else:
-                            st.error(" 매칭되는 결과가 없습니다. 서열을 확인하세요.")
                             
+                            # --- [핵심 추가: Description 매핑] ---
+                            descriptions = get_fasta_descriptions()
+                            # Locus ID를 기준으로 설명 정보를 가져와 새로운 컬럼 추가
+                            df['Description'] = df['Locus ID'].map(descriptions).fillna("Unknown Protein")
+                            
+                            # 보기 좋게 컬럼 순서 변경 (ID 옆에 Description 배치)
+                            cols = ["Locus ID", "Description", "Identity(%)", "E-value", "Length", "BitScore"]
+                            df_display = df[cols]
+                            
+                            st.success(f"검색 완료: {len(df)}개의 유전자를 찾았습니다.")
+                            st.dataframe(df_display, use_container_width=True)
+                        else:
+                            st.error("매칭되는 결과가 없습니다.")
                     except Exception as e:
                         st.error(f"실행 중 오류 발생: {e}")
 
