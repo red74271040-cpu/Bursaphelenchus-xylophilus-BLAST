@@ -139,12 +139,11 @@ with tab1:
             if not query_seq or len(query_seq) < 15:
                 st.warning("15bp 이상의 서열을 입력해 주십시오.")
             else:
-                # 1. 경로 설정 (아까 만든 DB 위치)
-              # 1. 경로 설정 (반드시 앞뒤에 r을 붙여서 특수문자 에러 방지)
-                work_dir = r"C:\Users\SAMSUNG\blast_work"
-                db_path = os.path.join(work_dir, "pwn_db")
-                temp_query = os.path.join(work_dir, "temp_query.fa")
-                result_csv = os.path.join(work_dir, "blast_result.csv")
+                base_path = os.getcwd() 
+                temp_query_fa = os.path.join(base_path, "temp_query.fa")
+                db_path = os.path.join(base_path, "pwn_db") # GitHub에 올린 DB 폴더 이름
+                result_csv = os.path.join(base_path, "blast_result.csv")
+        
                 
                 # 2. blastn 실행 파일의 전체 경로 (환경 변수 에러 방지)
                 # 만약 설치 경로가 다르다면 이 부분을 실제 blastn.exe가 있는 경로로 바꾸세요.
