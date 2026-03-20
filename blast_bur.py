@@ -131,13 +131,10 @@ with tab1:
             if not query_seq or len(query_seq) < 15:
                 st.warning("15bp 이상의 서열을 입력해 주십시오.")
             else:
-                base_path = os.getcwd() 
-                temp_query = os.path.join(base_path, "temp_query.fa")
-                with open(temp_query, "w") as f:
-                    f.write(f">Query\n{query_seq}")
-                db_folder = os.path.join(base_path, "pwn_db")
-                db_path = os.path.join(db_folder, "pwn_db")
-                result_csv = os.path.join(base_path, "blast_result.csv")
+              base_path = os.getcwd() 
+              temp_query = os.path.join(base_path, "temp_query.fa")
+              result_csv = os.path.join(base_path, "blast_result.csv")
+              db_path = os.path.join(base_path, "pwn_db", "pwn_db")
         
         
                 
