@@ -89,15 +89,7 @@ with st.sidebar:
     st.caption("Mechanism of RNA Interference")
     st.markdown("---")
 
-    # 교수님 사진 섹션
-    st.markdown("### 🎓 Principal Investigator")
-    if os.path.exists("professor.jpg"):
-        st.image("professor.jpg", use_container_width=True)
-    else:
-        st.info("교수님 사진(professor.jpg)을 폴더에 넣어주세요.")
     
-    st.caption("Jin Mo Goo, Ph.D.")
-    st.markdown("---")
     
     # 버전 정보 (맨 밑)
     st.markdown("""
@@ -140,7 +132,7 @@ with tab1:
                 st.warning("15bp 이상의 서열을 입력해 주십시오.")
             else:
                 base_path = os.getcwd() 
-                temp_query_fa = os.path.join(base_path, "temp_query.fa")
+                temp_query_fa = os.path.join(base_path, "temp_query")
                 db_path = os.path.join(base_path, "pwn_db") # GitHub에 올린 DB 폴더 이름
                 result_csv = os.path.join(base_path, "blast_result.csv")
         
