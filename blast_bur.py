@@ -131,19 +131,22 @@ with tab1:
             if not query_seq or len(query_seq) < 15:
                 st.warning("15bp 이상의 서열을 입력해 주십시오.")
             else:
-              base_path = os.getcwd() 
-              temp_query = os.path.join(base_path, "temp_query.fa")
-              result_csv = os.path.join(base_path, "blast_result.csv")
-              db_path = os.path.join(base_path, "pwn_db", "pwn_db")
-        
-        
-                
+                base_path = os.getcwd() 
+                temp_query = os.path.join(base_path, "temp_query.fa")
+                result_csv = os.path.join(base_path, "blast_result.csv")
+                # pwn_db 폴더 안의 pwn_db 인덱스 파일을 가리킴
+                db_path = os.path.join(base_path, "pwn_db", "pwn_db") 
+
+                # --- [핵심 수정: 입력한 서열을 실제 파일로 저장해야 BLAST가 읽습니다] ---
+                with open(temp_query, "w") as f:
+                    f.write(f">Query\n{query_seq}")
+                # ------------------------------------------------------------------
+
                 with st.spinner("로컬 데이터베이스 검색 중..."):
                     try:
                         # 3. BLAST 실행
-                        # 만약 환경 변수 등록이 안 되어 있다면 blast_exe 경로를 직접 넣습니다.
                         cmd = [
-                            "blastn", # 또는 blast_exe (경로를 직접 넣으려면)
+                            "blastn",
                             "-query", temp_query,
                             "-db", db_path,
                             "-out", result_csv,
@@ -151,9 +154,10 @@ with tab1:
                             "-task", "blastn-short"
                         ]
                         
-                        subprocess.run(cmd, check=True, shell=True)
+                        # shell=True를 빼는 것이 서버(Linux)에서 더 안정적입니다.
+                        subprocess.run(cmd, check=True)
                         
-                        # 4. 파일 크기 체크 (os.path.getsize로 수정)
+                        # 4. 결과 출력
                         if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
                             df = pd.read_csv(result_csv, names=[
                                 "Query", "Locus ID", "Identity(%)", "Length", 
