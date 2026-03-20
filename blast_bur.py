@@ -35,26 +35,6 @@ if 'setup_done' not in st.session_state:
     )
     st.session_state['setup_done'] = True
 
-#로그인 체크 로직
-if 'authenticated' not in st.session_state:
-    st.session_state['authenticated'] = False
-
-def check_password():
-    if st.session_state.get("password_input") == "knu2026":
-        st.session_state['authenticated'] = True
-    else:
-        st.error("비밀번호가 일치하지 않습니다.")
-
-if not st.session_state['authenticated']:
-    st.markdown('<div style="text-align:center; margin-top:200px;">', unsafe_allow_html=True)
-    st.title("Restricted Access")
-    st.write("본 시스템은 허가된 사용자만 이용 가능합니다.")
-    st.text_input("Access Password", type="password", key="password_input")
-    if st.button("Login"):
-        check_password()
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.stop()
 
 
 
