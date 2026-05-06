@@ -115,9 +115,8 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
          
 with tab1:
     st.header("B. xylophilus 유전자 정보 검색")
-    st.info("구축된 로컬 CDS 데이터베이스를 활용하여 재선충 유전자를 검색합니다.")
+    st.info("로컬 DB에서 서열을 검색하고, 상세 이름은 NCBI에서 실시간으로 가져옵니다.")
 
-    # 좌우 레이아웃 분할 (입력창과 설명창)
     c1_in, c1_gui = st.columns([3, 2])
     
     with c1_in:
@@ -126,17 +125,15 @@ with tab1:
                                  placeholder="분석할 서열(ATGC...)을 입력하십시오.", 
                                  key="pwn_local_search")
         
-        # [추가] FASTA 헤더에서 ID와 설명(Description)을 추출하는 함수
-        @st.cache_data
-        def get_fasta_descriptions():
-            desc_dict = {}
-            # 성환 님의 저장소에 있는 원본 FASTA 파일 이름을 확인하세요 (예: pwn_cds.fa)
-            fasta_file = os.path.join(os.getcwd(), "pwn_db", "pwn_cds.fa") 
-            if os.path.exists(fasta_file):
-                for record in SeqIO.parse(fasta_file, "fasta"):
-                    # ID (BAE48369.1)를 키로, 전체 헤더를 값으로 저장
-                    desc_dict[record.id] = record.description.split(' ', 1)[1] if ' ' in record.description else "No description"
-            return desc_dict
+        # [수정] NCBI에서 실시간으로 단백질 이름을 가져오는 함수
+        def get_description_from_ncbi(locus_id):
+            try:
+                # Entrez를 사용하여 NCBI에 해당 ID의 정보를 요청
+                handle = Entrez.efetch(db="protein", id=locus_id, rettype="gb", retmode="text")
+                record = SeqIO.read(handle, "genbank")
+                return record.description
+            except:
+                return "Description not found in NCBI"
 
         if st.button("RUN LOCAL BLAST", use_container_width=True):
             if not query_seq or len(query_seq) < 15:
@@ -150,7 +147,7 @@ with tab1:
                 with open(temp_query, "w") as f:
                     f.write(f">Query\n{query_seq}")
 
-                with st.spinner("로컬 데이터베이스 검색 및 매핑 중..."):
+                with st.spinner("로컬 BLAST 검색 중..."):
                     try:
                         cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                                "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
@@ -163,18 +160,21 @@ with tab1:
                                 "Mismatch", "Gaps", "Q_Start", "Q_End", 
                                 "S_Start", "S_End", "E-value", "BitScore"
                             ])
+
+                            # --- [핵심 수정: 실시간 NCBI 이름 매핑] ---
+                            with st.spinner("상위 결과의 이름을 NCBI에서 조회하고 있습니다..."):
+                                # 성능을 위해 검색 결과 중 상위 5개 ID만 이름을 가져옵니다.
+                                unique_ids = df['Locus ID'].unique()[:5]
+                                # NCBI에서 이름을 가져와 사전(dict)으로 만듦
+                                name_map = {idx: get_description_from_ncbi(idx) for idx in unique_ids}
+                                
+                                # 데이터프레임에 이름 추가 (검색되지 않은 하위 항목은 'Unknown' 처리)
+                                df['Description'] = df['Locus ID'].map(name_map).fillna("Check NCBI for more info")
                             
-                            # --- [핵심 추가: Description 매핑] ---
-                            descriptions = get_fasta_descriptions()
-                            # Locus ID를 기준으로 설명 정보를 가져와 새로운 컬럼 추가
-                            df['Description'] = df['Locus ID'].map(descriptions).fillna("Unknown Protein")
-                            
-                            # 보기 좋게 컬럼 순서 변경 (ID 옆에 Description 배치)
+                            # 컬럼 순서 조정
                             cols = ["Locus ID", "Description", "Identity(%)", "E-value", "Length", "BitScore"]
-                            df_display = df[cols]
-                            
-                            st.success(f"검색 완료: {len(df)}개의 유전자를 찾았습니다.")
-                            st.dataframe(df_display, use_container_width=True)
+                            st.success(f"검색 완료!")
+                            st.dataframe(df[cols], use_container_width=True)
                         else:
                             st.error("매칭되는 결과가 없습니다.")
                     except Exception as e:
@@ -182,43 +182,29 @@ with tab1:
 
     with c1_gui:
         st.subheader("도우미")
-        st.write("이 시스템은 **C:\\Users\\SAMSUNG\\blast_work** 폴더의 로컬 인덱스를 사용합니다.")
+        st.write("로컬 DB 검색 속도와 NCBI의 최신 정보를 결합하여 결과를 보여줍니다.")
         with st.expander("결과 항목 설명"):
             st.markdown("""
-            - **Locus ID**: 재선충 유전자 식별 번호 (예: BXYJ_LOCUS...)
-            - **Identity**: 서열 일치율 (%)
-            - **E-value**: 0에 가까울수록 통계적으로 유의미한 결과
-            - **S_Start/End**: 재선충 유전자 내 매칭 위치
+            - **Description**: NCBI Protein DB에서 가져온 실제 단백질 이름입니다.
+            - **Locus ID**: 재선충 유전자 식별 번호
+            - **E-value**: 0에 가까울수록 신뢰도가 높음
             """)
-    # 기존 도우미 내용 하단에 추가
+    
     st.markdown("---")
     st.subheader("🌐 NCBI Protein Quick Search")
     st.write("검색된 **Locus ID**를 입력하면 NCBI Protein DB로 바로 연결됩니다.")
 
-    # 사용자로부터 ID 입력받기
     search_id = st.text_input("Enter Locus ID (e.g., BAE48369.1)", placeholder="Locus ID 입력...")
 
     if search_id:
-        # NCBI Protein 검색 URL 생성
         ncbi_url = f"https://www.ncbi.nlm.nih.gov/protein/{search_id}"
-        
-        # 버튼 클릭 시 해당 페이지 열기 (Markdown 활용)
         st.markdown(f"""
             <a href="{ncbi_url}" target="_blank">
-                <button style="
-                    width: 100%;
-                    background-color: #1a2a6c;
-                    color: white;
-                    padding: 10px;
-                    border: none;
-                    border-radius: 5px;
-                    cursor: pointer;
-                    font-weight: bold;
-                ">NCBI에서 {search_id} 상세 정보 확인하기 ↗️</button>
+                <button style="width: 100%; background-color: #1a2a6c; color: white; padding: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                NCBI에서 {search_id} 상세 정보 확인하기 ↗️
+                </button>
             </a>
             """, unsafe_allow_html=True)
-        
-        st.caption("※ 새 창에서 NCBI Protein 데이터베이스가 열립니다.")
 
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
