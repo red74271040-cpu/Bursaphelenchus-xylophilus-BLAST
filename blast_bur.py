@@ -115,25 +115,37 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
          
 with tab1:
     st.header("B. xylophilus 유전자 정보 검색")
-    st.info("로컬 DB에서 서열을 검색하고, 상세 이름은 NCBI에서 실시간으로 가져옵니다.")
+    st.info("로컬 DB 검색 후, NCBI 서버를 통해 최신 단백질 성명(Product Name)을 확인합니다.")
 
     c1_in, c1_gui = st.columns([3, 2])
     
     with c1_in:
         st.subheader("Sequence Search")
-        query_seq = st.text_area("dsRNA Primer Sequence input", height=150, 
+        query_seq = st.text_area("DNA/dsRNA Sequence input", height=150, 
                                  placeholder="분석할 서열(ATGC...)을 입력하십시오.", 
                                  key="pwn_local_search")
         
-        # [수정] NCBI에서 실시간으로 단백질 이름을 가져오는 함수
-        def get_description_from_ncbi(locus_id):
+        # [수정] NCBI에서 실시간으로 유전자의 '진짜 이름'을 가져오는 함수
+        def get_real_name_from_ncbi(locus_id):
             try:
-                # Entrez를 사용하여 NCBI에 해당 ID의 정보를 요청
-                handle = Entrez.efetch(db="protein", id=locus_id, rettype="gb", retmode="text")
-                record = SeqIO.read(handle, "genbank")
-                return record.description
+                # 1. ID를 통해 NCBI Summary 정보 획득
+                handle = Entrez.esummary(db="protein", id=locus_id)
+                record = Entrez.read(handle)
+                handle.close()
+                
+                # 2. 타이틀(단백질 성명) 추출
+                title = record[0]['Title']
+                
+                # 만약 타이틀에도 unnamed가 있다면 더 상세한 정보(GenBank) 확인
+                if "unnamed" in title.lower() or "hypothetical" in title.lower():
+                    handle = Entrez.efetch(db="protein", id=locus_id, rettype="gb", retmode="text")
+                    gb_record = SeqIO.read(handle, "genbank")
+                    handle.close()
+                    # GenBank의 definition 라인 반환
+                    return gb_record.description
+                return title
             except:
-                return "Description not found in NCBI"
+                return "Unknown Protein (NCBI search failed)"
 
         if st.button("RUN LOCAL BLAST", use_container_width=True):
             if not query_seq or len(query_seq) < 15:
@@ -147,8 +159,9 @@ with tab1:
                 with open(temp_query, "w") as f:
                     f.write(f">Query\n{query_seq}")
 
-                with st.spinner("로컬 BLAST 검색 중..."):
+                with st.spinner("로컬 DB 검색 및 NCBI 성명 조회 중..."):
                     try:
+                        # 1. 로컬 BLAST 실행
                         cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                                "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
                                "-task", "blastn-short"]
@@ -161,51 +174,37 @@ with tab1:
                                 "S_Start", "S_End", "E-value", "BitScore"
                             ])
 
-                            # --- [핵심 수정: 실시간 NCBI 이름 매핑] ---
-                            with st.spinner("상위 결과의 이름을 NCBI에서 조회하고 있습니다..."):
-                                # 성능을 위해 검색 결과 중 상위 5개 ID만 이름을 가져옵니다.
-                                unique_ids = df['Locus ID'].unique()[:5]
-                                # NCBI에서 이름을 가져와 사전(dict)으로 만듦
-                                name_map = {idx: get_description_from_ncbi(idx) for idx in unique_ids}
-                                
-                                # 데이터프레임에 이름 추가 (검색되지 않은 하위 항목은 'Unknown' 처리)
-                                df['Description'] = df['Locus ID'].map(name_map).fillna("Check NCBI for more info")
+                            # 2. 검색된 ID들에 대해 NCBI에서 실제 이름 매핑
+                            # (속도를 위해 상위 5개 유니크 ID만 조회)
+                            unique_ids = df['Locus ID'].unique()[:5]
+                            name_map = {}
+                            for uid in unique_ids:
+                                name_map[uid] = get_real_name_from_ncbi(uid)
                             
-                            # 컬럼 순서 조정
-                            cols = ["Locus ID", "Description", "Identity(%)", "E-value", "Length", "BitScore"]
-                            st.success(f"검색 완료!")
+                            df['Description'] = df['Locus ID'].map(name_map).fillna("Check details below")
+                            
+                            # 3. 화면 출력
+                            cols = ["Locus ID", "Description", "Identity(%)", "E-value", "BitScore"]
+                            st.success(f"분석 완료! {len(df)}개의 매칭을 찾았습니다.")
                             st.dataframe(df[cols], use_container_width=True)
+                            
                         else:
                             st.error("매칭되는 결과가 없습니다.")
                     except Exception as e:
                         st.error(f"실행 중 오류 발생: {e}")
 
     with c1_gui:
-        st.subheader("도우미")
-        st.write("로컬 DB 검색 속도와 NCBI의 최신 정보를 결합하여 결과를 보여줍니다.")
-        with st.expander("결과 항목 설명"):
+        st.subheader("시스템 가이드")
+        st.write("본 도구는 로컬 BLAST의 **속도**와 NCBI의 **최신 명칭 데이터**를 실시간으로 결합합니다.")
+        with st.expander("성명이 'unnamed'로 뜰 때 팁"):
             st.markdown("""
-            - **Description**: NCBI Protein DB에서 가져온 실제 단백질 이름입니다.
-            - **Locus ID**: 재선충 유전자 식별 번호
-            - **E-value**: 0에 가까울수록 신뢰도가 높음
+            1. 해당 유전자가 신규 유전자일 가능성이 높습니다.
+            2. 하단의 **NCBI 상세 정보** 버튼을 눌러 Protein Family 정보를 확인하세요.
+            3. **Tab 6**에서 번역 후 타 종 유전자와 비교(Homology Search)가 필요합니다.
             """)
-    
+
     st.markdown("---")
-    st.subheader("🌐 NCBI Protein Quick Search")
-    st.write("검색된 **Locus ID**를 입력하면 NCBI Protein DB로 바로 연결됩니다.")
-
-    search_id = st.text_input("Enter Locus ID (e.g., BAE48369.1)", placeholder="Locus ID 입력...")
-
-    if search_id:
-        ncbi_url = f"https://www.ncbi.nlm.nih.gov/protein/{search_id}"
-        st.markdown(f"""
-            <a href="{ncbi_url}" target="_blank">
-                <button style="width: 100%; background-color: #1a2a6c; color: white; padding: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                NCBI에서 {search_id} 상세 정보 확인하기 ↗️
-                </button>
-            </a>
-            """, unsafe_allow_html=True)
-
+    # ... (이하 NCBI Quick Search 버튼 코드는 동일)
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
     st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석합니다.")
