@@ -146,24 +146,37 @@ with tab1:
         if not query_seq or len(query_seq) < 15:
             st.warning("15bp 이상의 서열을 입력해 주십시오.")
         else:
-            base_path = os.getcwd() 
-            db_path = os.path.join(base_path, "pwn_dbcsh", "pwn_dbcsh")
-            # DB 경로: pwn_db 폴더 안의 pwn_db 파일들을 가리킴 
+            # --- [수정] 변수 정의 위치 확보 ---
+            base_path = os.path.dirname(os.path.abspath(__file__)) # 현재 파일 기준 절대경로
+            temp_query = os.path.join(base_path, "temp_query.fa")
             result_csv = os.path.join(base_path, "blast_result.csv")
-
-            with open(temp_query, "w") as f:
-                f.write(f">Query\n{query_seq}")
+            
+            # 폴더명(pwn_dbcsh)과 파일앞이름(pwn_dbcsh) 설정
+            db_path = os.path.join(base_path, "pwn_dbcsh", "pwn_dbcsh") 
 
             with st.spinner("로컬 데이터베이스 분석 중..."):
                 try:
+                    # 1. 쿼리 파일 생성
+                    with open(temp_query, "w") as f:
+                        f.write(f">Query\n{query_seq}")
+
+                    # 2. BLAST 실행
                     import subprocess
-                    # BLAST 실행 (명령어 한 줄로 끝)
-                    cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
-                           "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                           "-task", "blastn-short"]
-                    subprocess.run(cmd, check=True)
+                    cmd = [
+                        "blastn", 
+                        "-query", temp_query, 
+                        "-db", db_path, 
+                        "-out", result_csv,
+                        "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                        "-task", "blastn-short"
+                    ]
                     
-                    if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
+                    # 실행 결과 캡처
+                    process = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    if process.returncode != 0:
+                        st.error(f"BLAST 실행 에러 (Status {process.returncode}): {process.stderr}")
+                    elif os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
                         import pandas as pd
                         df = pd.read_csv(result_csv, names=[
                             "Query", "Locus ID", "Identity(%)", "Length", 
@@ -171,23 +184,17 @@ with tab1:
                             "S_Start", "S_End", "E-value", "BitScore"
                         ])
 
-                        # [매핑] 파일에서 이름표 가져와서 새 컬럼 추가
+                        # [매핑] 이름표 가져오기
                         local_names = get_local_descriptions()
                         df['Gene Product (Annotation)'] = df['Locus ID'].map(local_names).fillna("Hypothetical Protein")
 
-                        st.success(f"분석 완료: {len(df)}개의 매칭 결과를 찾았습니다.")
-                        
-                        # [출력] 이름 컬럼을 가장 앞에 배치하여 가독성 극대화
-                        st.dataframe(df[["Gene Product (Annotation)", "Locus ID", "Identity(%)", "E-value"]], 
-                                     use_container_width=True)
-                        
-                        # 상세 결과 다운로드
-                        st.download_button("결과 CSV 다운로드", data=df.to_csv(index=False), file_name="pwn_analysis_results.csv")
-                        
+                        st.success(f"분석 완료: {len(df)}개의 결과를 찾았습니다.")
+                        st.dataframe(df[["Gene Product (Annotation)", "Locus ID", "Identity(%)", "E-value"]], use_container_width=True)
                     else:
-                        st.error("매칭되는 결과가 없습니다. 서열을 확인하거나 DB를 업데이트하세요.")
+                        st.error("매칭되는 결과가 없습니다.")
+                        
                 except Exception as e:
-                    st.error(f"실행 중 오류 발생: {e}")
+                    st.error(f"코드 실행 중 오류 발생: {e}")
 
     # (보너스) 기존 NCBI 버튼은 검증용으로 작게 유지
     with st.expander("NCBI 웹사이트에서 외부 검증이 필요한 경우"):
