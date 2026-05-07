@@ -114,7 +114,7 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
       
          
 with tab1:
-    st.header("🎯 B. xylophilus 유전자 정보 실시간 분석")
+    st.header(" B. xylophilus 유전자 정보 실시간 분석")
     st.info("로컬 DB를 통해 유전자 ID와 상세 기능(Product)을 즉시 확인합니다.")
 
     # [핵심] 로컬 FASTA 파일에서 이름표를 읽어오는 함수
@@ -137,7 +137,7 @@ with tab1:
         return desc_dict
 
     # 1단계 UI: 서열 입력 및 분석
-    st.subheader("🧬 시퀀스 분석 실행")
+    st.subheader(" 시퀀스 분석 실행")
     query_seq = st.text_area("분석할 서열(DNA) 입력", height=150, 
                              placeholder="ATGC...", 
                              key="pwn_local_v3")
@@ -147,9 +147,8 @@ with tab1:
             st.warning("15bp 이상의 서열을 입력해 주십시오.")
         else:
             base_path = os.getcwd() 
-            temp_query = os.path.join(base_path, "temp_query.fa")
-            # DB 경로: pwn_db 폴더 안의 pwn_db 파일들을 가리킴
-            db_path = os.path.join(base_path, "pwn_db", "pwn_db") 
+            db_path = os.path.join(base_path, "pwn_dbcsh", "pwn_dbcsh")
+            # DB 경로: pwn_db 폴더 안의 pwn_db 파일들을 가리킴 
             result_csv = os.path.join(base_path, "blast_result.csv")
 
             with open(temp_query, "w") as f:
