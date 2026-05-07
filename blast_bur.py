@@ -114,102 +114,111 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
       
          
 with tab1:
-    st.header(" B. xylophilus 유전자 정보 실시간 분석")
+    st.header("🎯 B. xylophilus 유전자 정보 실시간 분석")
     st.info("로컬 DB를 통해 유전자 ID와 상세 기능(Product)을 즉시 확인합니다.")
 
-    # [핵심] 로컬 FASTA 파일에서 이름표를 읽어오는 함수
+    # [1. 이름표 데이터 로딩 함수] - ID 정제 로직 강화
     @st.cache_data
     def get_local_descriptions():
         desc_dict = {}
-        # 아까 만든 통합 파일 이름 (app.py와 같은 폴더에 있어야 함)
-        fasta_file = os.path.join(os.getcwd(), "pwn_cds_named.fa") 
+        # GitHub 서버 환경에서는 절대 경로를 사용하는 것이 안전합니다.
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        fasta_file = os.path.join(current_dir, "pwn_cds_named.fa") 
         
         if os.path.exists(fasta_file):
             from Bio import SeqIO
             for record in SeqIO.parse(fasta_file, "fasta"):
+                # ID에서 transcript:, cds: 등 제거하여 매칭 확률 극대화
+                raw_id = record.id
+                clean_id = raw_id.replace('transcript:', '').replace('cds:', '').split('.')[0]
+                
                 full_desc = record.description
-                if " " in full_desc:
-                    # ID를 제외한 나머지 설명 부분만 추출
-                    protein_name = full_desc.split(" ", 1)[1]
-                else:
-                    protein_name = "Hypothetical Protein"
-                desc_dict[record.id] = protein_name
+                protein_name = full_desc.split(" ", 1)[1] if " " in full_desc else "Hypothetical Protein"
+                
+                # 다양한 형태의 ID를 키값으로 저장
+                desc_dict[raw_id] = protein_name
+                desc_dict[clean_id] = protein_name
         return desc_dict
 
-    # 1단계 UI: 서열 입력 및 분석
-    st.subheader(" 시퀀스 분석 실행")
+    # [2. UI 섹션]
+    st.subheader("🧬 시퀀스 분석 실행")
     query_seq = st.text_area("분석할 서열(DNA) 입력", height=150, 
                              placeholder="ATGC...", 
-                             key="pwn_local_v3")
+                             key="pwn_local_vfinal")
 
     if st.button("RUN ANALYSIS (LOCAL)", use_container_width=True):
         if not query_seq or len(query_seq) < 15:
             st.warning("15bp 이상의 서열을 입력해 주십시오.")
         else:
-            # --- [수정] 변수 정의 위치 확보 ---
-            base_path = os.path.dirname(os.path.abspath(__file__)) # 현재 파일 기준 절대경로
+            # 변수 정의
+            base_path = os.path.dirname(os.path.abspath(__file__))
             temp_query = os.path.join(base_path, "temp_query.fa")
             result_csv = os.path.join(base_path, "blast_result.csv")
-            
-            # 폴더명(pwn_dbcsh)과 파일앞이름(pwn_dbcsh) 설정
-            db_path = os.path.join(base_path, "pwn_dbcsh", "pwn_dbcsh") 
+            # 폴더명 pwn_dbcsh 안의 파일앞이름 pwn_dbcsh
+            db_path = os.path.join(base_path, "pwn_dbcsh", "pwn_dbcsh")
 
-            with st.spinner("로컬 데이터베이스 분석 중..."):
+            with st.spinner("데이터베이스 분석 중..."):
                 try:
-                    # 1. 쿼리 파일 생성
+                    import subprocess
+                    import pandas as pd
+
+                    # 쿼리 파일 생성
                     with open(temp_query, "w") as f:
                         f.write(f">Query\n{query_seq}")
 
-                    # 2. BLAST 실행
-                    import subprocess
+                    # BLAST 실행
                     cmd = [
-                        "blastn", 
-                        "-query", temp_query, 
-                        "-db", db_path, 
-                        "-out", result_csv,
+                        "blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                         "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
                         "-task", "blastn-short"
                     ]
-                    
-                    # 실행 결과 캡처
                     process = subprocess.run(cmd, capture_output=True, text=True)
-                    
+
                     if process.returncode != 0:
-                        st.error(f"BLAST 실행 에러 (Status {process.returncode}): {process.stderr}")
+                        st.error(f"BLAST 실행 에러: {process.stderr}")
                     elif os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                        import pandas as pd
                         df = pd.read_csv(result_csv, names=[
                             "Query", "Locus ID", "Identity(%)", "Length", 
                             "Mismatch", "Gaps", "Q_Start", "Q_End", 
                             "S_Start", "S_End", "E-value", "BitScore"
                         ])
 
-                        # [매핑] 이름표 가져오기
+                        # [매핑 작업]
                         local_names = get_local_descriptions()
-                        df['Gene Product (Annotation)'] = df['Locus ID'].map(local_names).fillna("Hypothetical Protein")
+                        
+                        # BLAST 결과 ID도 정제해서 비교
+                        def get_name(locus_id):
+                            c_id = str(locus_id).replace('transcript:', '').replace('cds:', '').split('.')[0]
+                            return local_names.get(c_id, local_names.get(str(locus_id), "Hypothetical Protein"))
 
-                        st.success(f"분석 완료: {len(df)}개의 결과를 찾았습니다.")
-                        st.dataframe(df[["Gene Product (Annotation)", "Locus ID", "Identity(%)", "E-value"]], use_container_width=True)
+                        df['Gene Product (Annotation)'] = df['Locus ID'].apply(get_name)
+
+                        st.success(f"✅ 분석 완료: {len(df)}개의 결과를 찾았습니다.")
+                        
+                        # 표 출력 (이름 컬럼을 맨 앞으로)
+                        display_df = df[["Gene Product (Annotation)", "Locus ID", "Identity(%)", "E-value"]].head(20)
+                        st.dataframe(display_df, use_container_width=True)
+                        
+                        st.download_button("결과 전체 다운로드 (CSV)", data=df.to_csv(index=False), file_name="pwn_result.csv")
                     else:
                         st.error("매칭되는 결과가 없습니다.")
-                        
                 except Exception as e:
-                    st.error(f"코드 실행 중 오류 발생: {e}")
+                    st.error(f"오류 발생: {e}")
 
-    # (보너스) 기존 NCBI 버튼은 검증용으로 작게 유지
-    with st.expander("NCBI 웹사이트에서 외부 검증이 필요한 경우"):
+    # NCBI 웹사이트 연결은 접어두기
+    with st.expander("NCBI 웹사이트에서 정밀 검증"):
         if query_seq:
-            ncbi_blast_html = f"""
+            ncbi_html = f"""
             <form action="https://blast.ncbi.nlm.nih.gov/Blast.cgi" method="get" target="_blank">
                 <input type="hidden" name="QUERY" value="{query_seq}">
                 <input type="hidden" name="PROGRAM" value="blastn">
                 <input type="hidden" name="PAGE_TYPE" value="BlastSearch">
-                <button type="submit" style="width: 100%; background-color: #f0f2f6; border: 1px solid #ccc; padding: 10px; cursor: pointer; border-radius: 5px;">
-                    🚀 NCBI 공식 BLAST 사이트로 서열 보내기
+                <button type="submit" style="width: 100%; background-color: #ff4b4b; color: white; padding: 10px; border: none; border-radius: 5px; cursor: pointer;">
+                    🚀 NCBI BLAST 실행하기
                 </button>
             </form>
             """
-            st.markdown(ncbi_blast_html, unsafe_allow_html=True)
+            st.markdown(ncbi_html, unsafe_allow_html=True)
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
     st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석합니다.")
