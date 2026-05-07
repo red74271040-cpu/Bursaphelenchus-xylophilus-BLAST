@@ -114,17 +114,18 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
       
          
 with tab1:
-    st.header(" B. xylophilus 유전자 정보 실시간 분석")
+    st.header("🎯 B. xylophilus 유전자 정보 실시간 분석")
     st.info("로컬 DB를 통해 유전자 ID와 상세 기능(Product)을 즉시 확인합니다.")
 
-    # [추가] 로컬 FASTA 파일에서 이름표를 읽어오는 캐시 함수
+    # [핵심] 로컬 FASTA 파일에서 이름표를 읽어오는 함수
     @st.cache_data
     def get_local_descriptions():
         desc_dict = {}
-        # 아까 만든 통합 파일 이름 (경로가 다르면 수정하세요)
+        # 아까 만든 통합 파일 이름 (app.py와 같은 폴더에 있어야 함)
         fasta_file = os.path.join(os.getcwd(), "pwn_cds_named.fa") 
         
         if os.path.exists(fasta_file):
+            from Bio import SeqIO
             for record in SeqIO.parse(fasta_file, "fasta"):
                 full_desc = record.description
                 if " " in full_desc:
@@ -135,8 +136,8 @@ with tab1:
                 desc_dict[record.id] = protein_name
         return desc_dict
 
-    # 1단계 UI
-    st.subheader(" 시퀀스 분석 실행")
+    # 1단계 UI: 서열 입력 및 분석
+    st.subheader("🧬 시퀀스 분석 실행")
     query_seq = st.text_area("분석할 서열(DNA) 입력", height=150, 
                              placeholder="ATGC...", 
                              key="pwn_local_v3")
@@ -147,8 +148,8 @@ with tab1:
         else:
             base_path = os.getcwd() 
             temp_query = os.path.join(base_path, "temp_query.fa")
-            # DB 경로는 아까 makeblastdb로 만든 이름과 맞춰야 합니다
-            db_path = os.path.join(base_path, "pwn_db") 
+            # DB 경로: pwn_db 폴더 안의 pwn_db 파일들을 가리킴
+            db_path = os.path.join(base_path, "pwn_db", "pwn_db") 
             result_csv = os.path.join(base_path, "blast_result.csv")
 
             with open(temp_query, "w") as f:
@@ -156,47 +157,49 @@ with tab1:
 
             with st.spinner("로컬 데이터베이스 분석 중..."):
                 try:
-                    # BLAST 실행
+                    import subprocess
+                    # BLAST 실행 (명령어 한 줄로 끝)
                     cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                            "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
                            "-task", "blastn-short"]
                     subprocess.run(cmd, check=True)
                     
                     if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
+                        import pandas as pd
                         df = pd.read_csv(result_csv, names=[
                             "Query", "Locus ID", "Identity(%)", "Length", 
                             "Mismatch", "Gaps", "Q_Start", "Q_End", 
                             "S_Start", "S_End", "E-value", "BitScore"
                         ])
 
-                        # [핵심] 로컬 이름 매핑 적용
+                        # [매핑] 파일에서 이름표 가져와서 새 컬럼 추가
                         local_names = get_local_descriptions()
                         df['Gene Product (Annotation)'] = df['Locus ID'].map(local_names).fillna("Hypothetical Protein")
 
                         st.success(f"분석 완료: {len(df)}개의 매칭 결과를 찾았습니다.")
                         
-                        # [결과 출력] 이름 컬럼을 가장 앞에 배치하여 이미지처럼 보이게 함
+                        # [출력] 이름 컬럼을 가장 앞에 배치하여 가독성 극대화
                         st.dataframe(df[["Gene Product (Annotation)", "Locus ID", "Identity(%)", "E-value"]], 
                                      use_container_width=True)
                         
-                        # 상세 데이터 다운로드 버튼
-                        st.download_button("결과 CSV 다운로드", data=df.to_csv(index=False), file_name="blast_results.csv")
+                        # 상세 결과 다운로드
+                        st.download_button("결과 CSV 다운로드", data=df.to_csv(index=False), file_name="pwn_analysis_results.csv")
                         
                     else:
                         st.error("매칭되는 결과가 없습니다. 서열을 확인하거나 DB를 업데이트하세요.")
                 except Exception as e:
                     st.error(f"실행 중 오류 발생: {e}")
 
-    # (옵션) 기존 NCBI 버튼은 참고용으로 하단에 작게 배치
-    with st.expander("NCBI 웹사이트에서 추가 분석이 필요한 경우"):
+    # (보너스) 기존 NCBI 버튼은 검증용으로 작게 유지
+    with st.expander("NCBI 웹사이트에서 외부 검증이 필요한 경우"):
         if query_seq:
             ncbi_blast_html = f"""
             <form action="https://blast.ncbi.nlm.nih.gov/Blast.cgi" method="get" target="_blank">
                 <input type="hidden" name="QUERY" value="{query_seq}">
                 <input type="hidden" name="PROGRAM" value="blastn">
                 <input type="hidden" name="PAGE_TYPE" value="BlastSearch">
-                <button type="submit" style="width: 100%; background-color: #f0f2f6; border: 1px solid #ccc; padding: 10px; cursor: pointer;">
-                     NCBI BLAST로 외부 검증 수행
+                <button type="submit" style="width: 100%; background-color: #f0f2f6; border: 1px solid #ccc; padding: 10px; cursor: pointer; border-radius: 5px;">
+                    🚀 NCBI 공식 BLAST 사이트로 서열 보내기
                 </button>
             </form>
             """
