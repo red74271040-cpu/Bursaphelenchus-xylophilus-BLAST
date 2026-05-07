@@ -114,7 +114,7 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
       
          
 with tab1:
-    st.header("🎯 B. xylophilus 유전자 정보 실시간 분석")
+    st.header(" B. xylophilus 유전자 정보 실시간 분석")
     st.info("로컬 DB를 통해 유전자 ID와 상세 기능(Product)을 즉시 확인합니다.")
 
     # [추가] 로컬 FASTA 파일에서 이름표를 읽어오는 캐시 함수
