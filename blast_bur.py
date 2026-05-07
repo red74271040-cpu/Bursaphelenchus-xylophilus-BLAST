@@ -114,99 +114,93 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
       
          
 with tab1:
-    st.header("B. xylophilus 유전자 정보 검색 및 정체 분석")
-    st.info("1. 로컬 DB에서 Locus ID를 찾습니다. \n2. 해당 서열을 NCBI 웹사이트로 보내 실시간 BLAST 분석을 수행합니다.")
+    st.header("🎯 B. xylophilus 유전자 정보 실시간 분석")
+    st.info("로컬 DB를 통해 유전자 ID와 상세 기능(Product)을 즉시 확인합니다.")
 
-    c1_in, c1_gui = st.columns([3, 2])
-    
-    with c1_in:
-        st.subheader("1단계: 로컬 시퀀스 검색")
-        query_seq = st.text_area("분석할 서열(DNA) 입력", height=150, 
-                                 placeholder="ATGC...", 
-                                 key="pwn_local_search_v2")
-
-        if st.button("RUN LOCAL BLAST", use_container_width=True):
-            if not query_seq or len(query_seq) < 15:
-                st.warning("15bp 이상의 서열을 입력해 주십시오.")
-            else:
-                # 로컬 BLAST 실행 로직 (기존과 동일)
-                base_path = os.getcwd() 
-                temp_query = os.path.join(base_path, "temp_query.fa")
-                db_path = os.path.join(base_path, "pwn_db", "pwn_db") 
-                result_csv = os.path.join(base_path, "blast_result.csv")
-
-                with open(temp_query, "w") as f:
-                    f.write(f">Query\n{query_seq}")
-
-                with st.spinner("로컬 데이터베이스에서 Locus ID를 찾는 중..."):
-                    try:
-                        cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
-                               "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                               "-task", "blastn-short"]
-                        subprocess.run(cmd, check=True)
-                        
-                        if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                            df = pd.read_csv(result_csv, names=[
-                                "Query", "Locus ID", "Identity(%)", "Length", 
-                                "Mismatch", "Gaps", "Q_Start", "Q_End", 
-                                "S_Start", "S_End", "E-value", "BitScore"
-                            ])
-                            st.success(f"로컬 검색 완료: {len(df)}개의 유전자를 찾았습니다.")
-                            st.dataframe(df[["Locus ID", "Identity(%)", "E-value", "BitScore"]], use_container_width=True)
-                            
-                            # 검색 결과 중 첫 번째 서열(가장 정확한 것)을 세션에 저장
-                            st.session_state['last_query_seq'] = query_seq
-                        else:
-                            st.error("매칭되는 결과가 없습니다.")
-                    except Exception as e:
-                        st.error(f"실행 중 오류 발생: {e}")
-
-    with c1_gui:
-        st.subheader("2단계: NCBI 웹 분석")
-        st.write("로컬에서 찾은 유전자의 정체가 궁금하다면?")
+    # [추가] 로컬 FASTA 파일에서 이름표를 읽어오는 캐시 함수
+    @st.cache_data
+    def get_local_descriptions():
+        desc_dict = {}
+        # 아까 만든 통합 파일 이름 (경로가 다르면 수정하세요)
+        fasta_file = os.path.join(os.getcwd(), "pwn_cds_named.fa") 
         
-        # NCBI 웹 BLAST로 바로 날려주는 버튼 (HTML Form 활용)
-        if 'last_query_seq' in st.session_state:
-            st.info("현재 입력된 서열을 NCBI 서버로 전송할 준비가 되었습니다.")
-            
-            # NCBI 웹 BLAST(blastn)로 서열을 보내는 HTML 폼
+        if os.path.exists(fasta_file):
+            for record in SeqIO.parse(fasta_file, "fasta"):
+                full_desc = record.description
+                if " " in full_desc:
+                    # ID를 제외한 나머지 설명 부분만 추출
+                    protein_name = full_desc.split(" ", 1)[1]
+                else:
+                    protein_name = "Hypothetical Protein"
+                desc_dict[record.id] = protein_name
+        return desc_dict
+
+    # 1단계 UI
+    st.subheader(" 시퀀스 분석 실행")
+    query_seq = st.text_area("분석할 서열(DNA) 입력", height=150, 
+                             placeholder="ATGC...", 
+                             key="pwn_local_v3")
+
+    if st.button("RUN ANALYSIS (LOCAL)", use_container_width=True):
+        if not query_seq or len(query_seq) < 15:
+            st.warning("15bp 이상의 서열을 입력해 주십시오.")
+        else:
+            base_path = os.getcwd() 
+            temp_query = os.path.join(base_path, "temp_query.fa")
+            # DB 경로는 아까 makeblastdb로 만든 이름과 맞춰야 합니다
+            db_path = os.path.join(base_path, "pwn_db") 
+            result_csv = os.path.join(base_path, "blast_result.csv")
+
+            with open(temp_query, "w") as f:
+                f.write(f">Query\n{query_seq}")
+
+            with st.spinner("로컬 데이터베이스 분석 중..."):
+                try:
+                    # BLAST 실행
+                    cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
+                           "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                           "-task", "blastn-short"]
+                    subprocess.run(cmd, check=True)
+                    
+                    if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
+                        df = pd.read_csv(result_csv, names=[
+                            "Query", "Locus ID", "Identity(%)", "Length", 
+                            "Mismatch", "Gaps", "Q_Start", "Q_End", 
+                            "S_Start", "S_End", "E-value", "BitScore"
+                        ])
+
+                        # [핵심] 로컬 이름 매핑 적용
+                        local_names = get_local_descriptions()
+                        df['Gene Product (Annotation)'] = df['Locus ID'].map(local_names).fillna("Hypothetical Protein")
+
+                        st.success(f"분석 완료: {len(df)}개의 매칭 결과를 찾았습니다.")
+                        
+                        # [결과 출력] 이름 컬럼을 가장 앞에 배치하여 이미지처럼 보이게 함
+                        st.dataframe(df[["Gene Product (Annotation)", "Locus ID", "Identity(%)", "E-value"]], 
+                                     use_container_width=True)
+                        
+                        # 상세 데이터 다운로드 버튼
+                        st.download_button("결과 CSV 다운로드", data=df.to_csv(index=False), file_name="blast_results.csv")
+                        
+                    else:
+                        st.error("매칭되는 결과가 없습니다. 서열을 확인하거나 DB를 업데이트하세요.")
+                except Exception as e:
+                    st.error(f"실행 중 오류 발생: {e}")
+
+    # (옵션) 기존 NCBI 버튼은 참고용으로 하단에 작게 배치
+    with st.expander("NCBI 웹사이트에서 추가 분석이 필요한 경우"):
+        if query_seq:
             ncbi_blast_html = f"""
             <form action="https://blast.ncbi.nlm.nih.gov/Blast.cgi" method="get" target="_blank">
-                <input type="hidden" name="QUERY" value="{st.session_state['last_query_seq']}">
+                <input type="hidden" name="QUERY" value="{query_seq}">
                 <input type="hidden" name="PROGRAM" value="blastn">
                 <input type="hidden" name="PAGE_TYPE" value="BlastSearch">
-                <input type="hidden" name="LINK_LOC" value="blasthome">
-                <button type="submit" style="
-                    width: 100%;
-                    background-color: #ff4b4b;
-                    color: white;
-                    padding: 15px;
-                    border: none;
-                    border-radius: 10px;
-                    cursor: pointer;
-                    font-weight: bold;
-                    font-size: 16px;
-                ">🚀 NCBI 웹사이트에서 BLAST 실행하기</button>
+                <button type="submit" style="width: 100%; background-color: #f0f2f6; border: 1px solid #ccc; padding: 10px; cursor: pointer;">
+                     NCBI BLAST로 외부 검증 수행
+                </button>
             </form>
             """
             st.markdown(ncbi_blast_html, unsafe_allow_html=True)
-            st.caption("위 버튼을 누르면 NCBI 공식 BLAST 검색창에 서열이 자동 입력된 채로 새 창이 열립니다.")
-        else:
-            st.warning("먼저 로컬 BLAST를 실행해 주세요.")
-
-    # 하단에 별도의 NCBI 검색창(ID 직접 검색용) 추가
-    st.markdown("---")
-    st.subheader("🔍 NCBI ID 직접 검색창")
-    col_search1, col_search2 = st.columns([3, 1])
-    
-    with col_search1:
-        manual_id = st.text_input("조회하고 싶은 NCBI Accession ID를 입력하세요", placeholder="예: BAE48369.1")
-    
-    with col_search2:
-        if st.button("ID 검색", use_container_width=True):
-            if manual_id:
-                webbrowser_url = f"https://www.ncbi.nlm.nih.gov/search/all/?term={manual_id}"
-                st.markdown(f'<p><a href="{webbrowser_url}" target="_blank">이동하기 ↗️</a></p>', unsafe_allow_html=True)
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
     st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석합니다.")
