@@ -204,7 +204,7 @@ with tab1:
 
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
-    st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석
+    st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석")
 
     # 1. 모드 및 설정 선택
     col_mode, col_set = st.columns([1, 1])
