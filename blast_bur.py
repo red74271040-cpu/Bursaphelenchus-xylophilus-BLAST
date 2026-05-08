@@ -111,7 +111,7 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene조정 및 파일형식 변환"
 ])
 with tab1:
-    st.header("🔬 RNAi 프라이머 표적 유전자 분석")
+    st.header(" RNAi 프라이머 표적 유전자 분석")
     
     @st.cache_data
     def get_rich_descriptions_v_final():
