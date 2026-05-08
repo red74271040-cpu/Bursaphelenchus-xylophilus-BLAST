@@ -113,11 +113,9 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
 with tab1:
     st.header("🔬 RNAi 프라이머 표적 유전자 분석")
     
-    # [1. 이름표 로드 함수 - label 제거 및 경로 최적화]
     @st.cache_data
-    def get_rich_descriptions_v3(): # 함수 이름을 바꿔서 캐시를 새로 고침
+    def get_rich_descriptions_v4():
         desc_dict = {}
-        # 현재 실행 파일(blast_bur.py)의 위치를 기준으로 경로 설정
         current_dir = os.path.dirname(os.path.abspath(__file__))
         target_path = os.path.join(current_dir, "pwn_pro_named.fa")
         
@@ -125,82 +123,77 @@ with tab1:
             from Bio import SeqIO
             try:
                 for record in SeqIO.parse(target_path, "fasta"):
-                    # 설명 부분 정제
+                    # 헤더: >transcript:BXY_0416800.1 7TM GPCR...
                     full_desc = record.description
-                    clean_desc = full_desc.replace('%0A', ' ').replace('%2C', ',').replace('%20', ' ')
-                    parts = clean_desc.split(" ", 1)
+                    parts = full_desc.split(" ", 1)
                     name = parts[1] if len(parts) > 1 else "Hypothetical Protein"
                     
-                    # 매핑 키 저장 (다양한 ID 형식 대응)
-                    rid = str(record.id)
+                    # 모든 변형 ID를 키로 저장 (공백 제거 필수)
+                    rid = str(record.id).strip()
                     desc_dict[rid] = name
-                    desc_dict[rid.split('.')[0]] = name
                     desc_dict[rid.replace('transcript:', '').replace('cds:', '')] = name
+                    desc_dict[rid.split('.')[0]] = name
             except Exception as e:
-                st.error(f"파일 내용 읽기 오류: {e}")
-        else:
-            # 파일이 없을 경우 현재 위치의 파일 목록을 보여줌 (디버깅용)
-            st.error(f"⚠️ 파일을 찾을 수 없습니다: {target_path}")
-            try:
-                st.info(f"현재 폴더({current_dir}) 내 파일: {os.listdir(current_dir)}")
-            except:
-                pass
-            
+                st.error(f"파일 읽기 실패: {e}")
         return desc_dict
 
-    # [2. UI 섹션]
-    query_seq = st.text_area("프라이머 서열 입력", height=100, placeholder="ATGC...", key="v_final_fix_v3")
+    query_seq = st.text_area("프라이머 서열 입력", height=100, key="v_final_check")
 
     if st.button("분석 실행", use_container_width=True):
         if not query_seq or len(query_seq) < 15:
             st.warning("15bp 이상의 서열을 입력해 주세요.")
         else:
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            # DB 경로 설정
             db_path = os.path.join(current_dir, "pwn_dbcsh", "pwn_dbcsh")
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
 
             with st.spinner("데이터 분석 중..."):
                 try:
-                    # 쿼리 임시 파일 생성
                     with open(temp_query, "w") as f:
                         f.write(f">Query\n{query_seq}")
 
                     import subprocess
                     import pandas as pd
 
-                    # BLAST 실행
                     cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                            "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
                            "-task", "blastn-short", "-evalue", "1000"]
-                    
                     subprocess.run(cmd, capture_output=True, text=True)
 
                     if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
                         df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
                         
-                        # V3 함수 호출
-                        rich_names = get_rich_descriptions_v3()
+                        rich_names = get_rich_descriptions_v4()
                         
+                        # [매핑 로직: 완전 포함 검색으로 강화]
                         def fetch_name(x):
-                            x_str = str(x)
+                            x_str = str(x).strip()
+                            # 1. 직접 매칭
                             if x_str in rich_names: return rich_names[x_str]
+                            # 2. 정제 후 매칭 (BXY_...만 남기기)
                             clean = x_str.replace('cds:', '').replace('transcript:', '').split('.')[0]
                             if clean in rich_names: return rich_names[clean]
+                            # 3. 끈질긴 부분 검색
                             for k, v in rich_names.items():
-                                if k in x_str: return v
-                            return "Unknown/Hypothetical Protein"
+                                if k in x_str or x_str in k: return v
+                            return "Unknown"
 
                         df['Target Function'] = df['Locus ID'].apply(fetch_name)
-                        st.success(f"분석 완료: {len(df)}개 타겟 발견")
+                        
+                        st.success(f"검색 완료: {len(df)}개 발견")
+                        # 결과 출력
                         st.dataframe(df[["Target Function", "Locus ID", "Identity(%)", "E-value"]], use_container_width=True)
+                        
+                        # [디버깅용] 만약 Unknown이 뜨면 아래 데이터를 보고 저한테 알려주세요
+                        if "Unknown" in df['Target Function'].values:
+                            with st.expander("🚨 매칭 실패 분석 (Unknown이 뜰 경우 이 내용을 확인하세요)"):
+                                st.write("BLAST가 찾은 ID 예시:", df['Locus ID'].iloc[0])
+                                st.write("사전에 등록된 ID 일부:", list(rich_names.keys())[:5])
                     else:
-                        st.error("결과가 없습니다. DB 경로를 확인해 주세요.")
+                        st.error("BLAST 결과가 없습니다. DB 경로를 확인하세요.")
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
-      
-         
 
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
