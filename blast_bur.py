@@ -115,41 +115,47 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
          
 with tab1:
     st.header("🔬 RNAi 프라이머 표적 유전자 분석")
-    st.info("입력하신 프라이머 서열이 재선충의 어떤 유전자를 타겟하는지 분석합니다.")
+    st.info("프라이머 서열이 재선충의 어떤 유전자를 타겟하는지 상세 분석합니다.")
 
-    # [1. 상세 이름표 로딩] - 정보가 많은 단백질 파일(pro)에서 가져옴
+    # [1. 상세 이름표 로딩] - 모든 가능성을 고려한 매핑 사전 구축
     @st.cache_data
     def get_rich_descriptions():
         desc_dict = {}
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        # 상세 정보가 있는 단백질 이름표 파일 사용
+        # 상세 정보가 있는 단백질 이름표 파일
         pro_fasta = os.path.join(current_dir, "pwn_pro_named.fa") 
         
         if os.path.exists(pro_fasta):
             from Bio import SeqIO
             for record in SeqIO.parse(pro_fasta, "fasta"):
                 full_desc = record.description
-                # %0A(줄바꿈), %2C(,) 등 특수문자 정제
+                # 특수문자 정제
                 clean_desc = full_desc.replace('%0A', ' ').replace('%2C', ',').replace('%20', ' ')
+                # ID를 제외한 나머지 설명 추출
                 name = clean_desc.split(" ", 1)[1] if " " in clean_desc else "Hypothetical Protein"
                 
-                # ID 정제 매핑
-                desc_dict[record.id] = name
-                desc_dict[record.id.split('.')[0]] = name
+                # [중요] 모든 변종 ID를 키값으로 등록
+                raw_id = str(record.id) # 예: BXY_0416800.1
+                short_id = raw_id.split('.')[0] # 예: BXY_0416800
+                clean_id = raw_id.replace('transcript:', '').replace('cds:', '').replace('gene:', '')
+                
+                desc_dict[raw_id] = name
+                desc_dict[short_id] = name
+                desc_dict[clean_id] = name
+                desc_dict[clean_id.split('.')[0]] = name
         return desc_dict
 
     # [2. UI 섹션]
     query_seq = st.text_area("프라이머 또는 siRNA 서열 입력", height=100, 
-                             placeholder="예: TTGTTTCGGCTCAGTTTGGA", key="primer_search")
+                             placeholder="예: TTGTTTCGGCTCAGTTTGGA", key="primer_v_final")
 
     if st.button("표적 유전자 분석 실행", use_container_width=True):
         if not query_seq or len(query_seq) < 15:
-            st.warning("분석을 위해 15bp 이상의 서열을 입력해 주세요.")
+            st.warning("15bp 이상의 서열을 입력해 주세요.")
         else:
             base_path = os.path.dirname(os.path.abspath(__file__))
             temp_query = os.path.join(base_path, "temp_query.fa")
             result_csv = os.path.join(base_path, "blast_result.csv")
-            # 검색은 반드시 DNA DB(cds)에서 수행
             db_path = os.path.join(base_path, "pwn_dbcsh", "pwn_dbcsh")
 
             with st.spinner("표적 유전자 매칭 중..."):
@@ -158,35 +164,52 @@ with tab1:
                         f.write(f">Query\n{query_seq}")
 
                     import subprocess
-                    # 프라이머 검색용 최적화 옵션 (-task blastn-short)
+                    import pandas as pd
+
                     cmd = [
                         "blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                         "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                        "-task", "blastn-short", "-evalue", "1000" # 짧은 서열은 e-value를 높여야 잘 나옵니다
+                        "-task", "blastn-short", "-evalue", "1000"
                     ]
                     subprocess.run(cmd, capture_output=True, text=True)
 
                     if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                        import pandas as pd
                         df = pd.read_csv(result_csv, names=[
                             "Query", "Locus ID", "Identity(%)", "Length", 
                             "Mismatch", "Gaps", "Q_Start", "Q_End", 
                             "S_Start", "S_End", "E-value", "BitScore"
                         ])
 
-                        # 단백질 파일에서 상세 이름 매핑
+                        # 매핑 사전 로드
                         rich_names = get_rich_descriptions()
-                        df['Target Gene Function'] = df['Locus ID'].apply(lambda x: rich_names.get(str(x).split('.')[0], "Unknown Protein"))
-
-                        st.success(f"✅ 분석 완료! 총 {len(df)}개의 잠재적 타겟을 찾았습니다.")
                         
-                        # 가독성 좋게 출력
-                        display_col = ["Target Gene Function", "Locus ID", "Identity(%)", "Length", "E-value"]
-                        st.dataframe(df[display_col].head(20), use_container_width=True)
+                        # [끈질긴 이름 찾기 함수]
+                        def fetch_name(target_id):
+                            target_str = str(target_id)
+                            # 1. 사전에 직접 있는지 확인 (가장 빠름)
+                            if target_str in rich_names: return rich_names[target_str]
+                            
+                            # 2. 전처리 후 확인 (cds: 제거, 소수점 제거 등)
+                            clean = target_str.replace('cds:', '').replace('transcript:', '').split('.')[0]
+                            if clean in rich_names: return rich_names[clean]
+                            
+                            # 3. 부분 일치 확인 (사전의 키값 중 포함된 것이 있는지)
+                            for k, v in rich_names.items():
+                                if k in target_str or target_str in k:
+                                    return v
+                            
+                            return "Unknown/Hypothetical Protein"
+
+                        df['Target Function'] = df['Locus ID'].apply(fetch_name)
+
+                        st.success(f"✅ 분석 완료! {len(df)}개의 잠재적 타겟 발견")
+                        
+                        # 가독성 순서로 출력
+                        st.dataframe(df[["Target Function", "Locus ID", "Identity(%)", "E-value"]], use_container_width=True)
                     else:
-                        st.error("매칭되는 표적 유전자가 없습니다. 서열을 다시 확인해 주세요.")
+                        st.error("결과가 없습니다. DB 경로를 확인하거나 서열을 다시 봐주세요.")
                 except Exception as e:
-                    st.error(f"오류 발생: {e}")
+                    st.error(f"오류: {e}")
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
     st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석합니다.")
