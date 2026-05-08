@@ -111,44 +111,55 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene조정 및 파일형식 변환"
 ])
 with tab1:
-    st.header(" RNAi 프라이머 표적 유전자 분석")
-    
+    st.header("🔬 RNAi 프라이머 표적 유전자 분석")
+    st.info("프라이머 서열을 분석하여 재선충의 표적 유전자 정보와 NCBI 링크를 제공합니다.")
+
+    # [1. 상세 이름표 로딩 - 숫자 매칭 강화 버전]
     @st.cache_data
     def get_rich_descriptions_v_final():
-        # 리스트로 저장해서 순서(Index)로 접근할 수 있게 함
-        desc_list = []
         desc_dict = {}
         current_dir = os.path.dirname(os.path.abspath(__file__))
+        # 상세 정보가 있는 단백질 이름표 파일 (사용자님이 성공한 소스)
         target_path = os.path.join(current_dir, "pwn_pro_named.fa")
         
         if os.path.exists(target_path):
             from Bio import SeqIO
+            import re
             try:
                 for record in SeqIO.parse(target_path, "fasta"):
                     full_desc = record.description
                     parts = full_desc.split(" ", 1)
                     name = parts[1] if len(parts) > 1 else "Hypothetical Protein"
                     
-                    # 1. 딕셔너리 저장 (혹시 모를 ID 일치 대비)
-                    desc_dict[str(record.id).strip()] = name
-                    # 2. 리스트 저장 (순서 기반 매칭 대비)
-                    desc_list.append({"id": record.id, "name": name})
+                    # ID에서 숫자만 추출하여 키로 저장 (매칭 확률 극대화)
+                    raw_id = str(record.id)
+                    numbers = re.findall(r'\d+', raw_id)
+                    if numbers:
+                        num_key = str(int(numbers[0])) # 0을 제거한 숫자 (예: 12712)
+                        desc_dict[num_key] = name
+                    
+                    # 원본 ID도 키로 저장
+                    desc_dict[raw_id] = name
+                    desc_dict[raw_id.split('.')[0]] = name
             except Exception as e:
                 st.error(f"파일 읽기 실패: {e}")
-        return desc_dict, desc_list
+        return desc_dict
 
-    query_seq = st.text_area("프라이머 서열 입력", height=100, key="v_ultimate")
+    # [2. UI 섹션]
+    query_seq = st.text_area("프라이머 또는 siRNA 서열 입력", height=100, 
+                             placeholder="예: TTGTTTCGGCTCAGTTTGGA", key="v_final_ncbi")
 
     if st.button("분석 실행", use_container_width=True):
         if not query_seq or len(query_seq) < 15:
             st.warning("15bp 이상의 서열을 입력해 주세요.")
         else:
             current_dir = os.path.dirname(os.path.abspath(__file__))
+            # 성공했던 DB 경로 (사용자님 설정에 맞게 수정됨)
             db_path = os.path.join(current_dir, "pwn_dbcsh", "pwn_dbcsh")
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
 
-            with st.spinner("데이터 분석 중..."):
+            with st.spinner("표적 유전자 분석 중..."):
                 try:
                     with open(temp_query, "w") as f:
                         f.write(f">Query\n{query_seq}")
@@ -157,36 +168,56 @@ with tab1:
                     import pandas as pd
                     import re
 
+                    # BLAST 실행 (프라이머용 옵션)
                     cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                            "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
                            "-task", "blastn-short", "-evalue", "1000"]
                     subprocess.run(cmd, capture_output=True, text=True)
 
                     if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                        df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
+                        df = pd.read_csv(result_csv, names=[
+                            "Query", "Locus ID", "Identity(%)", "Length", 
+                            "Mismatch", "Gaps", "Q_Start", "Q_End", 
+                            "S_Start", "S_End", "E-value", "BitScore"
+                        ])
                         
-                        rich_dict, rich_list = get_rich_descriptions_v_final()
+                        rich_names = get_rich_descriptions_v_final()
                         
-                        def advanced_match(locus_id):
-                            l_id = str(locus_id).strip()
-                            # 1. ID가 직접 포함되어 있는지 확인
-                            if l_id in rich_dict: return rich_dict[l_id]
-                            
-                            # 2. 숫자만 뽑아서 리스트의 인덱스로 접근 시도 (BXYJ_LOCUS12712 -> 12712번째 유전자)
-                            nums = re.findall(r'\d+', l_id)
-                            if nums:
-                                idx = int(nums[0])
-                                if 0 <= idx < len(rich_list):
-                                    return f"[Index Match] {rich_list[idx]['name']}"
-                            
-                            # 3. 정 안되면 ID 자체를 반환 (최소한 어떤 유전자인지는 알 수 있게)
-                            return f"Unmapped ({l_id})"
+                        # [매핑 및 링크 생성 로직]
+                        def fetch_name(locus_id):
+                            locus_str = str(locus_id)
+                            # 숫자만 뽑아서 매칭 시도
+                            numbers = re.findall(r'\d+', locus_str)
+                            if numbers:
+                                num_key = str(int(numbers[0]))
+                                return rich_names.get(num_key, "Hypothetical Protein")
+                            return rich_names.get(locus_str, "Unknown Protein")
 
-                        df['Target Function'] = df['Locus ID'].apply(advanced_match)
-                        st.success(f"검색 완료: {len(df)}개 발견")
-                        st.dataframe(df[["Target Function", "Locus ID", "Identity(%)", "E-value"]], use_container_width=True)
+                        df['Target Function'] = df['Locus ID'].apply(fetch_name)
+                        
+                        # NCBI 검색 링크 컬럼 생성
+                        df['NCBI Link'] = df['Locus ID'].apply(lambda x: f"https://www.ncbi.nlm.nih.gov/search/all/?term={x}")
+
+                        st.success(f"✅ 분석 완료: {len(df)}개의 잠재적 타겟 발견")
+                        
+                        # [결과 테이블 출력]
+                        st.dataframe(
+                            df[["Target Function", "Locus ID", "NCBI Link", "Identity(%)", "E-value"]],
+                            column_config={
+                                "NCBI Link": st.column_config.LinkColumn(
+                                    "NCBI Detail",
+                                    display_text="View on NCBI 🔗"
+                                ),
+                                "Identity(%)": st.column_config.NumberColumn(format="%.1f%%"),
+                                "E-value": st.column_config.NumberColumn(format="%.2e")
+                            },
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                        
+                        st.download_button("결과 CSV 다운로드", data=df.to_csv(index=False), file_name="pwn_analysis.csv")
                     else:
-                        st.error("결과가 없습니다.")
+                        st.error("매칭되는 표적 유전자가 없습니다.")
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 with tab2:
