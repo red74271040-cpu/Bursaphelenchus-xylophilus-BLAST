@@ -114,92 +114,77 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
       
          
 with tab1:
-    st.header(" B. xylophilus 유전자 정보 실시간 분석")
-    st.info("로컬 DB를 통해 유전자 ID와 상세 기능(Product)을 즉시 확인합니다.")
+    st.header("🔬 RNAi 프라이머 표적 유전자 분석")
+    st.info("입력하신 프라이머 서열이 재선충의 어떤 유전자를 타겟하는지 분석합니다.")
 
-    # [1. 이름표 데이터 로딩 함수] - 매핑 로직 극대화
+    # [1. 상세 이름표 로딩] - 정보가 많은 단백질 파일(pro)에서 가져옴
     @st.cache_data
-    def get_local_descriptions():
+    def get_rich_descriptions():
         desc_dict = {}
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        fasta_file = os.path.join(current_dir, "pwn_cds_named.fa") 
+        # 상세 정보가 있는 단백질 이름표 파일 사용
+        pro_fasta = os.path.join(current_dir, "pwn_pro_named.fa") 
         
-        if os.path.exists(fasta_file):
+        if os.path.exists(pro_fasta):
             from Bio import SeqIO
-            for record in SeqIO.parse(fasta_file, "fasta"):
-                # 헤더에서 ID와 설명 분리
+            for record in SeqIO.parse(pro_fasta, "fasta"):
                 full_desc = record.description
-                if " " in full_desc:
-                    # 첫 공백 전까지가 ID, 그 뒤가 설명
-                    parts = full_desc.split(" ", 1)
-                    raw_id = parts[0]
-                    protein_name = parts[1]
-                else:
-                    raw_id = record.id
-                    protein_name = "Hypothetical Protein"
+                # %0A(줄바꿈), %2C(,) 등 특수문자 정제
+                clean_desc = full_desc.replace('%0A', ' ').replace('%2C', ',').replace('%20', ' ')
+                name = clean_desc.split(" ", 1)[1] if " " in clean_desc else "Hypothetical Protein"
                 
-                # ID 정제 (비교를 위해 최대한 단순화)
-                clean_id = raw_id.replace('transcript:', '').replace('cds:', '').replace('gene:', '').split('.')[0]
-                
-                # 사전 저장
-                desc_dict[raw_id] = protein_name
-                desc_dict[clean_id] = protein_name
+                # ID 정제 매핑
+                desc_dict[record.id] = name
+                desc_dict[record.id.split('.')[0]] = name
         return desc_dict
 
     # [2. UI 섹션]
-    st.subheader(" 시퀀스 분석 실행")
-    query_seq = st.text_area("분석할 서열(DNA) 입력", height=150, placeholder="ATGC...", key="pwn_v_final_fix")
+    query_seq = st.text_area("프라이머 또는 siRNA 서열 입력", height=100, 
+                             placeholder="예: TTGTTTCGGCTCAGTTTGGA", key="primer_search")
 
-    if st.button("RUN ANALYSIS (LOCAL)", use_container_width=True):
+    if st.button("표적 유전자 분석 실행", use_container_width=True):
         if not query_seq or len(query_seq) < 15:
-            st.warning("15bp 이상의 서열을 입력해 주십시오.")
+            st.warning("분석을 위해 15bp 이상의 서열을 입력해 주세요.")
         else:
             base_path = os.path.dirname(os.path.abspath(__file__))
             temp_query = os.path.join(base_path, "temp_query.fa")
             result_csv = os.path.join(base_path, "blast_result.csv")
+            # 검색은 반드시 DNA DB(cds)에서 수행
             db_path = os.path.join(base_path, "pwn_dbcsh", "pwn_dbcsh")
 
-            with st.spinner("데이터베이스 분석 중..."):
+            with st.spinner("표적 유전자 매칭 중..."):
                 try:
-                    import subprocess
-                    import pandas as pd
-
                     with open(temp_query, "w") as f:
                         f.write(f">Query\n{query_seq}")
 
-                    cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
-                           "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                           "-task", "blastn-short"]
+                    import subprocess
+                    # 프라이머 검색용 최적화 옵션 (-task blastn-short)
+                    cmd = [
+                        "blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
+                        "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                        "-task", "blastn-short", "-evalue", "1000" # 짧은 서열은 e-value를 높여야 잘 나옵니다
+                    ]
                     subprocess.run(cmd, capture_output=True, text=True)
 
                     if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                        df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
-                        
-                        local_names = get_local_descriptions()
-                        
-                        # [가장 끈질긴 매핑 로직]
-                        def find_best_name(hit_id):
-                            hit_id = str(hit_id)
-                            # 1. 원본 그대로 찾아보기
-                            if hit_id in local_names: return local_names[hit_id]
-                            
-                            # 2. 정제된 ID로 찾아보기
-                            c_id = hit_id.replace('transcript:', '').replace('cds:', '').replace('gene:', '').split('.')[0]
-                            if c_id in local_names: return local_names[c_id]
-                            
-                            # 3. 그래도 없으면? 사전 키값 중에 포함된 게 있는지 확인 (가장 강력함)
-                            for key in local_names.keys():
-                                if key in hit_id or hit_id in key:
-                                    return local_names[key]
-                            
-                            return "Hypothetical Protein"
+                        import pandas as pd
+                        df = pd.read_csv(result_csv, names=[
+                            "Query", "Locus ID", "Identity(%)", "Length", 
+                            "Mismatch", "Gaps", "Q_Start", "Q_End", 
+                            "S_Start", "S_End", "E-value", "BitScore"
+                        ])
 
-                        df['Gene Product (Annotation)'] = df['Locus ID'].apply(find_best_name)
+                        # 단백질 파일에서 상세 이름 매핑
+                        rich_names = get_rich_descriptions()
+                        df['Target Gene Function'] = df['Locus ID'].apply(lambda x: rich_names.get(str(x).split('.')[0], "Unknown Protein"))
 
-                        st.success(f"✅ 분석 완료: {len(df)}개의 매칭 결과를 찾았습니다.")
-                        st.dataframe(df[["Gene Product (Annotation)", "Locus ID", "Identity(%)", "E-value"]], use_container_width=True)
+                        st.success(f"✅ 분석 완료! 총 {len(df)}개의 잠재적 타겟을 찾았습니다.")
+                        
+                        # 가독성 좋게 출력
+                        display_col = ["Target Gene Function", "Locus ID", "Identity(%)", "Length", "E-value"]
+                        st.dataframe(df[display_col].head(20), use_container_width=True)
                     else:
-                        st.error("매칭 결과가 없습니다.")
+                        st.error("매칭되는 표적 유전자가 없습니다. 서열을 다시 확인해 주세요.")
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 with tab2:
