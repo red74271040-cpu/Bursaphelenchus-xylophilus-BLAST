@@ -116,59 +116,52 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
 with tab1:
     st.header("🔬 RNAi 프라이머 표적 유전자 분석")
     
-    # [1. 이름표 로드 함수 - 경로 추적 강화]
-    @st.cache_data
-    def get_rich_descriptions():
+    # [1. 이름표 로드 함수 - 캐시 이름을 v2로 변경하여 강제 갱신]
+    @st.cache_data(label="rich_desc_v2") 
+    def get_rich_descriptions_v2():
         desc_dict = {}
-        # 서버 환경의 모든 가능성 있는 경로 탐색
-        possible_paths = [
-            os.path.join(os.getcwd(), "pwn_pro_named.fa"),
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "pwn_pro_named.fa"),
-            "pwn_pro_named.fa"
-        ]
+        current_dir = os.path.dirname(os.path.abspath(__file__))
         
-        target_path = None
-        for p in possible_paths:
-            if os.path.exists(p):
-                target_path = p
-                break
+        # 파일명과 확장자(.fa)를 확실히 결합
+        target_path = os.path.join(current_dir, "pwn_pro_named.fa")
         
-        if target_path:
+        if os.path.exists(target_path):
             from Bio import SeqIO
             try:
                 for record in SeqIO.parse(target_path, "fasta"):
                     full_desc = record.description
+                    # 특수문자 정제 (%0A, %2C 등)
                     clean_desc = full_desc.replace('%0A', ' ').replace('%2C', ',').replace('%20', ' ')
-                    # ID와 설명 분리
                     parts = clean_desc.split(" ", 1)
                     name = parts[1] if len(parts) > 1 else "Hypothetical Protein"
                     
-                    # 매핑 키 다양화
                     rid = str(record.id)
+                    # 매핑 키 저장
                     desc_dict[rid] = name
                     desc_dict[rid.split('.')[0]] = name
                     desc_dict[rid.replace('transcript:', '').replace('cds:', '')] = name
             except Exception as e:
-                st.error(f"파일 읽기 오류: {e}")
+                st.error(f"파일 내용 읽기 오류: {e}")
         else:
-            st.error("⚠️ pwn_pro_named.fa 파일을 찾을 수 없습니다! 깃허브 업로드 상태를 확인하세요.")
+            # 파일이 진짜 없는지 경로 디버깅 출력
+            st.error(f"⚠️ 파일을 찾을 수 없습니다: {target_path}")
+            st.info("현재 폴더 내 파일 목록: " + str(os.listdir(current_dir)))
             
         return desc_dict
 
     # [2. UI 섹션]
-    query_seq = st.text_area("프라이머 서열 입력", height=100, placeholder="ATGC...", key="v_final_debug")
+    query_seq = st.text_area("프라이머 서열 입력", height=100, placeholder="ATGC...", key="v_final_cache_fix")
 
     if st.button("분석 실행", use_container_width=True):
         if not query_seq or len(query_seq) < 15:
             st.warning("15bp 이상의 서열을 입력해 주세요.")
         else:
-            # 경로 재설정 (사용자님의 폴더 구조에 맞춤)
             current_dir = os.path.dirname(os.path.abspath(__file__))
             db_path = os.path.join(current_dir, "pwn_dbcsh", "pwn_dbcsh")
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
 
-            with st.spinner("분석 중..."):
+            with st.spinner("데이터 분석 중..."):
                 try:
                     with open(temp_query, "w") as f:
                         f.write(f">Query\n{query_seq}")
@@ -185,18 +178,14 @@ with tab1:
                     if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
                         df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
                         
-                        # 사전 로드
-                        rich_names = get_rich_descriptions()
+                        # 새로운 함수(v2) 호출
+                        rich_names = get_rich_descriptions_v2()
                         
-                        # 매핑 로직
                         def fetch_name(x):
                             x_str = str(x)
-                            # 1. 직접 매칭
                             if x_str in rich_names: return rich_names[x_str]
-                            # 2. 전처리 매칭
                             clean = x_str.replace('cds:', '').replace('transcript:', '').split('.')[0]
                             if clean in rich_names: return rich_names[clean]
-                            # 3. 부분 일치 검색
                             for k, v in rich_names.items():
                                 if k in x_str: return v
                             return "Unknown/Hypothetical Protein"
@@ -205,7 +194,7 @@ with tab1:
                         st.success(f"분석 완료: {len(df)}개 타겟 발견")
                         st.dataframe(df[["Target Function", "Locus ID", "Identity(%)", "E-value"]], use_container_width=True)
                     else:
-                        st.error("결과가 없습니다. DB 경로를 확인하세요.")
+                        st.error("결과가 없습니다. DB 경로를 확인해 주세요.")
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 with tab2:
