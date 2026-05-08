@@ -114,30 +114,34 @@ with tab1:
     st.header("🔬 RNAi 프라이머 표적 유전자 분석")
     
     @st.cache_data
-    def get_rich_descriptions_v4():
+    def get_rich_descriptions_v6():
         desc_dict = {}
         current_dir = os.path.dirname(os.path.abspath(__file__))
         target_path = os.path.join(current_dir, "pwn_pro_named.fa")
         
         if os.path.exists(target_path):
             from Bio import SeqIO
+            import re
             try:
                 for record in SeqIO.parse(target_path, "fasta"):
-                    # 헤더: >transcript:BXY_0416800.1 7TM GPCR...
                     full_desc = record.description
                     parts = full_desc.split(" ", 1)
                     name = parts[1] if len(parts) > 1 else "Hypothetical Protein"
                     
-                    # 모든 변형 ID를 키로 저장 (공백 제거 필수)
-                    rid = str(record.id).strip()
-                    desc_dict[rid] = name
-                    desc_dict[rid.replace('transcript:', '').replace('cds:', '')] = name
-                    desc_dict[rid.split('.')[0]] = name
+                    # [핵심] ID에서 숫자만 추출 (BXY_12712 -> 12712)
+                    raw_id = str(record.id)
+                    numbers = re.findall(r'\d+', raw_id)
+                    if numbers:
+                        num_key = str(int(numbers[0])) # 앞의 0을 제거한 숫자
+                        desc_dict[num_key] = name
+                    
+                    # 혹시 몰라 원본 ID도 저장
+                    desc_dict[raw_id] = name
             except Exception as e:
                 st.error(f"파일 읽기 실패: {e}")
         return desc_dict
 
-    query_seq = st.text_area("프라이머 서열 입력", height=100, key="v_final_check")
+    query_seq = st.text_area("프라이머 서열 입력", height=100, key="v6_final")
 
     if st.button("분석 실행", use_container_width=True):
         if not query_seq or len(query_seq) < 15:
@@ -155,6 +159,7 @@ with tab1:
 
                     import subprocess
                     import pandas as pd
+                    import re
 
                     cmd = ["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                            "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
@@ -164,37 +169,26 @@ with tab1:
                     if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
                         df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
                         
-                        rich_names = get_rich_descriptions_v4()
+                        rich_names = get_rich_descriptions_v6()
                         
-                        # [매핑 로직: 완전 포함 검색으로 강화]
-                        def fetch_name(x):
-                            x_str = str(x).strip()
-                            # 1. 직접 매칭
-                            if x_str in rich_names: return rich_names[x_str]
-                            # 2. 정제 후 매칭 (BXY_...만 남기기)
-                            clean = x_str.replace('cds:', '').replace('transcript:', '').split('.')[0]
-                            if clean in rich_names: return rich_names[clean]
-                            # 3. 끈질긴 부분 검색
-                            for k, v in rich_names.items():
-                                if k in x_str or x_str in k: return v
-                            return "Unknown"
+                        # [매핑 로직: 숫자만 뽑아서 매칭]
+                        def fetch_name_by_number(locus_id):
+                            locus_str = str(locus_id)
+                            # BXYJ_LOCUS12712 에서 숫자만 추출
+                            numbers = re.findall(r'\d+', locus_str)
+                            if numbers:
+                                num_key = str(int(numbers[0])) # 12712
+                                return rich_names.get(num_key, "Unknown Protein")
+                            return "Unknown Protein"
 
-                        df['Target Function'] = df['Locus ID'].apply(fetch_name)
+                        df['Target Function'] = df['Locus ID'].apply(fetch_name_by_number)
                         
-                        st.success(f"검색 완료: {len(df)}개 발견")
-                        # 결과 출력
+                        st.success(f"검색 완료: {len(df)}개 타겟 발견")
                         st.dataframe(df[["Target Function", "Locus ID", "Identity(%)", "E-value"]], use_container_width=True)
-                        
-                        # [디버깅용] 만약 Unknown이 뜨면 아래 데이터를 보고 저한테 알려주세요
-                        if "Unknown" in df['Target Function'].values:
-                            with st.expander("🚨 매칭 실패 분석 (Unknown이 뜰 경우 이 내용을 확인하세요)"):
-                                st.write("BLAST가 찾은 ID 예시:", df['Locus ID'].iloc[0])
-                                st.write("사전에 등록된 ID 일부:", list(rich_names.keys())[:5])
                     else:
-                        st.error("BLAST 결과가 없습니다. DB 경로를 확인하세요.")
+                        st.error("결과가 없습니다.")
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
-
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
     st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석")
