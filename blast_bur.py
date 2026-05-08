@@ -114,34 +114,30 @@ with tab1:
     st.header("🔬 RNAi 프라이머 표적 유전자 분석")
     
     @st.cache_data
-    def get_rich_descriptions_v6():
+    def get_rich_descriptions_v_final():
+        # 리스트로 저장해서 순서(Index)로 접근할 수 있게 함
+        desc_list = []
         desc_dict = {}
         current_dir = os.path.dirname(os.path.abspath(__file__))
         target_path = os.path.join(current_dir, "pwn_pro_named.fa")
         
         if os.path.exists(target_path):
             from Bio import SeqIO
-            import re
             try:
                 for record in SeqIO.parse(target_path, "fasta"):
                     full_desc = record.description
                     parts = full_desc.split(" ", 1)
                     name = parts[1] if len(parts) > 1 else "Hypothetical Protein"
                     
-                    # [핵심] ID에서 숫자만 추출 (BXY_12712 -> 12712)
-                    raw_id = str(record.id)
-                    numbers = re.findall(r'\d+', raw_id)
-                    if numbers:
-                        num_key = str(int(numbers[0])) # 앞의 0을 제거한 숫자
-                        desc_dict[num_key] = name
-                    
-                    # 혹시 몰라 원본 ID도 저장
-                    desc_dict[raw_id] = name
+                    # 1. 딕셔너리 저장 (혹시 모를 ID 일치 대비)
+                    desc_dict[str(record.id).strip()] = name
+                    # 2. 리스트 저장 (순서 기반 매칭 대비)
+                    desc_list.append({"id": record.id, "name": name})
             except Exception as e:
                 st.error(f"파일 읽기 실패: {e}")
-        return desc_dict
+        return desc_dict, desc_list
 
-    query_seq = st.text_area("프라이머 서열 입력", height=100, key="v6_final")
+    query_seq = st.text_area("프라이머 서열 입력", height=100, key="v_ultimate")
 
     if st.button("분석 실행", use_container_width=True):
         if not query_seq or len(query_seq) < 15:
@@ -169,21 +165,25 @@ with tab1:
                     if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
                         df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
                         
-                        rich_names = get_rich_descriptions_v6()
+                        rich_dict, rich_list = get_rich_descriptions_v_final()
                         
-                        # [매핑 로직: 숫자만 뽑아서 매칭]
-                        def fetch_name_by_number(locus_id):
-                            locus_str = str(locus_id)
-                            # BXYJ_LOCUS12712 에서 숫자만 추출
-                            numbers = re.findall(r'\d+', locus_str)
-                            if numbers:
-                                num_key = str(int(numbers[0])) # 12712
-                                return rich_names.get(num_key, "Unknown Protein")
-                            return "Unknown Protein"
+                        def advanced_match(locus_id):
+                            l_id = str(locus_id).strip()
+                            # 1. ID가 직접 포함되어 있는지 확인
+                            if l_id in rich_dict: return rich_dict[l_id]
+                            
+                            # 2. 숫자만 뽑아서 리스트의 인덱스로 접근 시도 (BXYJ_LOCUS12712 -> 12712번째 유전자)
+                            nums = re.findall(r'\d+', l_id)
+                            if nums:
+                                idx = int(nums[0])
+                                if 0 <= idx < len(rich_list):
+                                    return f"[Index Match] {rich_list[idx]['name']}"
+                            
+                            # 3. 정 안되면 ID 자체를 반환 (최소한 어떤 유전자인지는 알 수 있게)
+                            return f"Unmapped ({l_id})"
 
-                        df['Target Function'] = df['Locus ID'].apply(fetch_name_by_number)
-                        
-                        st.success(f"검색 완료: {len(df)}개 타겟 발견")
+                        df['Target Function'] = df['Locus ID'].apply(advanced_match)
+                        st.success(f"검색 완료: {len(df)}개 발견")
                         st.dataframe(df[["Target Function", "Locus ID", "Identity(%)", "E-value"]], use_container_width=True)
                     else:
                         st.error("결과가 없습니다.")
