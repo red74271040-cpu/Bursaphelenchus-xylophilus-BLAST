@@ -112,60 +112,54 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
 ])
 with tab1:
     st.header("🧬 재선충(PWN) 표적 유전자 신속 분석")
-    st.markdown("프라이머 서열을 입력하면, 재선충 게놈 내 타겟 유전자 리스트와 기능을 출력합니다.")
+    st.markdown("프라이머 서열을 분석하여 가장 신뢰도 높은 표적 유전자를 상단에 표시합니다.")
 
-    # [1. 이름표 데이터베이스 구축]
+    # [1. 이름표 데이터 로딩]
     @st.cache_data
-    def get_gene_annotations():
+    def get_gene_annotations_v_final():
         mapping = {}
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        # 사용자님이 새로 DB를 구울 때 쓴 그 원본 이름표 파일
         fasta_path = os.path.join(current_dir, "pwn_pro_named.fa")
         
         if os.path.exists(fasta_path):
             from Bio import SeqIO
             for record in SeqIO.parse(fasta_path, "fasta"):
-                # record.id: BXY_0416800.1
-                # record.description: BXY_0416800.1 7TM GPCR, serpentine receptor...
                 full_desc = record.description
-                if " " in full_desc:
-                    # ID를 제외한 나머지 전체 설명을 기능으로 저장
-                    annotation = full_desc.split(" ", 1)[1]
-                else:
-                    annotation = "Hypothetical Protein"
-                
-                # 정제된 ID를 키로 저장
-                mapping[str(record.id).strip()] = annotation
+                annotation = full_desc.split(" ", 1)[1] if " " in full_desc else "Hypothetical Protein"
+                # 특수기호(%0A 등) 정제
+                clean_anno = annotation.replace('%0A', ' ').replace('%2C', ',').replace('%20', ' ')
+                mapping[str(record.id).strip()] = clean_anno
         return mapping
 
-    # [2. UI 입력창]
+    # [2. UI 섹션]
     query_seq = st.text_area("분석할 프라이머/siRNA 서열 입력", height=100, 
-                             placeholder="예: ACTTCGCCCAACCAAACCT", key="pwn_final_ui")
+                             placeholder="예: ACTTCGCCCAACCAAACCT", key="final_pwn_app")
 
-    if st.button("표적 유전자 검색 실행 🚀", use_container_width=True):
+    if st.button("표적 유전자 정밀 분석 실행 🚀", use_container_width=True):
         if not query_seq or len(query_seq) < 15:
-            st.warning("분석을 위해 15bp 이상의 서열을 입력해 주세요.")
+            st.warning("신뢰도 높은 분석을 위해 15bp 이상의 서열을 입력해 주세요.")
         else:
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            # [중요] 새로 만든 DB 폴더와 파일명을 정확히 입력하세요
+            # 새로 만든 DB 경로 (반드시 본인의 폴더명과 맞출 것)
             db_path = os.path.join(current_dir, "pwn_fixed_db", "pwn_fixed_db")
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
 
-            with st.spinner("재선충 전용 데이터베이스 분석 중..."):
+            with st.spinner("재선충 전용 DB에서 최적의 매칭을 찾는 중..."):
                 try:
-                    # 쿼리 파일 생성
                     with open(temp_query, "w") as f:
-                        f.write(f">Query_Sequence\n{query_seq}")
+                        f.write(f">Query\n{query_seq}")
 
                     import subprocess
                     import pandas as pd
 
-                    # BLAST 실행 (짧은 서열 최적화 옵션)
+                    # [핵심] E-value 컷오프를 1000에서 0.01로 조정하여 노이즈 제거
+                    # -task blastn-short는 유지하되, 통계적 유의성을 높임
                     cmd = [
                         "blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                         "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                        "-task", "blastn-short", "-evalue", "1000"
+                        "-task", "blastn-short", 
+                        "-evalue", "0.01"  # 800씩 나오던 우연한 일치들을 여기서 다 쳐냅니다.
                     ]
                     subprocess.run(cmd, capture_output=True, text=True)
 
@@ -176,36 +170,39 @@ with tab1:
                             "S_Start", "S_End", "E-value", "BitScore"
                         ])
 
-                        # 1. E-value 순으로 정렬 (가장 정확한 타겟이 위로)
-                        df = df.sort_values("E-value")
+                        # 1. BitScore 기준 내림차순 정렬 (가장 강력한 결합이 위로)
+                        df = df.sort_values("BitScore", ascending=False)
 
-                        # 2. 이름표 파일에서 실제 유전자 기능 매핑
-                        anno_map = get_gene_annotations()
+                        # 2. 이름표 매핑
+                        anno_map = get_gene_annotations_v_final()
                         df['Target_Gene_Function'] = df['Subject_ID'].apply(lambda x: anno_map.get(str(x).strip(), "Unknown Function"))
-
-                        # 3. NCBI 검색 링크 생성
+                        
+                        # 3. NCBI 검색 링크
                         df['NCBI_Link'] = df['Subject_ID'].apply(lambda x: f"https://www.ncbi.nlm.nih.gov/search/all/?term={x}")
 
-                        st.success(f"✅ 분석 완료! 가장 유력한 표적을 포함해 {len(df)}개의 결과를 찾았습니다.")
+                        st.success(f"✅ 분석 완료! 가장 유력한 {len(df)}개의 표적을 선별했습니다.")
 
-                        # [4. 결과 출력 테이블]
+                        # [4. 결과 테이블 출력]
                         st.dataframe(
-                            df[["Target_Gene_Function", "Subject_ID", "Identity(%)", "E-value", "NCBI_Link"]],
+                            df[["Target_Gene_Function", "Subject_ID", "Identity(%)", "E-value", "BitScore", "NCBI_Link"]],
                             column_config={
-                                "Target_Gene_Function": st.column_config.TextColumn("유전자 기능 (Target Name)", width="large"),
+                                "Target_Gene_Function": st.column_config.TextColumn("유전자 명칭/기능", width="large"),
                                 "Subject_ID": "Locus ID",
                                 "NCBI_Link": st.column_config.LinkColumn("NCBI", display_text="검색 🔗"),
-                                "Identity(%)": st.column_config.NumberColumn(format="%.1f%%")
+                                "Identity(%)": st.column_config.NumberColumn(format="%.1f%%"),
+                                "E-value": st.column_config.NumberColumn(format="%.2e"), # 지수 표기법 (1.2e-05 등)
+                                "BitScore": st.column_config.NumberColumn(format="%.1f")
                             },
                             use_container_width=True,
                             hide_index=True
                         )
                         
-                        st.download_button("결과 파일(CSV) 저장", data=df.to_csv(index=False), file_name="pwn_target_results.csv")
+                        st.download_button("결과 CSV 다운로드", data=df.to_csv(index=False), file_name="pwn_top_targets.csv")
                     else:
-                        st.error("매칭되는 재선충 유전자가 없습니다. 서열을 다시 확인해 보세요.")
+                        st.error("매칭되는 유전자가 없습니다. E-value 기준을 통과하지 못했거나 서열이 다를 수 있습니다.")
+                        st.info("Tip: 서열이 너무 짧으면 E-value를 조금 더 높게 조정해야 할 수도 있습니다.")
                 except Exception as e:
-                    st.error(f"실행 중 오류가 발생했습니다: {e}")
+                    st.error(f"실행 오류: {e}")
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
     st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석")
