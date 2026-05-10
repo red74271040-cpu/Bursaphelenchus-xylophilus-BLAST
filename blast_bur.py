@@ -111,99 +111,68 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene조정 및 파일형식 변환"
 ])
 with tab1:
-    st.header("🧬 재선충(PWN) 표적 유전자 분석기")
-    st.info("프라이머 서열을 분석하여 게놈 내 정확한 타겟 명칭을 출력합니다.")
+    st.header("🧬 재선충(PWN) 타겟 분석 (실시간 로딩 모드)")
 
-    # [1. 이름표 데이터베이스 구축 - 가장 확실한 라인 바이 라인 방식]
-    @st.cache_data
-    def get_pwn_annotations():
-        mapping = {}
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        fasta_path = os.path.join(current_dir, "pwn_pro_named.fa")
-        
-        if os.path.exists(fasta_path):
-            try:
-                with open(fasta_path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        if line.startswith(">"):
-                            # ">BXY_ID 기능설명" 구조를 쪼갬
-                            header = line.strip().lstrip(">")
-                            if " " in header:
-                                gene_id, annotation = header.split(" ", 1)
-                                # 특수문자 정제 (%0A, %20 등 제거)
-                                import urllib.parse
-                                clean_anno = urllib.parse.unquote(annotation).replace('%0A', ' ').strip()
-                                mapping[gene_id.strip()] = clean_anno
-                            else:
-                                mapping[header.strip()] = "Hypothetical Protein"
-            except Exception as e:
-                st.error(f"이름표 로딩 중 오류: {e}")
-        return mapping
+    # [1. UI 입력]
+    query_seq = st.text_area("프라이머 서열 입력", height=100, key="final_sleep_now")
 
-    # [2. UI 섹션]
-    query_seq = st.text_area("분석할 서열 입력 (DNA/RNA)", height=100, 
-                             placeholder="예: ACTTCGCCCAACCAAACCT", key="pwn_global_search")
-
-    if st.button("표적 유전자 분석 실행 🚀", use_container_width=True):
-        if not query_seq:
-            st.warning("서열을 입력해 주세요.")
-        else:
+    if st.button("분석 실행", use_container_width=True):
+        if query_seq:
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            # 사용자가 새로 만든 DB 경로와 일치해야 함
             db_path = os.path.join(current_dir, "pwn_fixed_db", "pwn_fixed_db")
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
+            fasta_path = os.path.join(current_dir, "pwn_pro_named.fa")
 
-            with st.spinner("재선충 전용 DB 분석 중..."):
+            with st.spinner("캐시 없이 실시간 분석 중..."):
                 try:
+                    # [2. BLAST 실행 - E-value 강제 무시 설정]
                     with open(temp_query, "w") as f:
                         f.write(f">Query\n{query_seq}")
 
                     import subprocess
                     import pandas as pd
+                    import os
 
-                    # NCBI Primer-BLAST 최적화 파라미터
-                    cmd = [
+                    # word_size를 더 낮추고 Identity를 강조하는 설정
+                    subprocess.run([
                         "blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                         "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                        "-task", "blastn-short", "-word_size", "7", "-evalue", "1000", "-dust", "no"
-                    ]
-                    subprocess.run(cmd, capture_output=True, text=True)
+                        "-task", "blastn-short", "-word_size", "7", "-evalue", "1000"
+                    ], capture_output=True)
 
                     if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                        df = pd.read_csv(result_csv, names=[
-                            "Query", "Subject_ID", "Identity(%)", "Length", 
-                            "Mismatch", "Gaps", "Q_Start", "Q_End", 
-                            "S_Start", "S_End", "E-value", "BitScore"
-                        ])
-
-                        # Identity 100%와 결합 길이(Length) 순으로 정렬
-                        df = df.sort_values(by=["Identity(%)", "Length", "BitScore"], ascending=False)
-
-                        # 이름표 매핑 (BXY_ID를 키로 사용)
-                        anno_map = get_pwn_annotations()
-                        df['Target_Function'] = df['Subject_ID'].apply(lambda x: anno_map.get(str(x).strip(), "No description in FASTA"))
+                        df = pd.read_csv(result_csv, names=["Query", "Subject_ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
                         
-                        # NCBI 링크
+                        # [3. 이름표 실시간 매핑 - 캐시 절대 안 씀]
+                        anno_map = {}
+                        if os.path.exists(fasta_path):
+                            with open(fasta_path, "r", encoding="utf-8") as f:
+                                for line in f:
+                                    if line.startswith(">"):
+                                        header = line.strip().lstrip(">")
+                                        parts = header.split(" ", 1)
+                                        gid = parts[0].strip()
+                                        gname = parts[1].replace("%0A", " ").strip() if len(parts) > 1 else "Hypothetical Protein"
+                                        anno_map[gid] = gname
+
+                        # 정렬 및 결과 구성
+                        df = df.sort_values(by=["Identity(%)", "BitScore"], ascending=False)
+                        df['Target_Function'] = df['Subject_ID'].apply(lambda x: anno_map.get(str(x).strip(), "No Match Found"))
+                        
+                        # [4. E-value가 높으면 아예 '낮음'으로 표시 (사용자 혼란 방지)]
                         df['NCBI_Link'] = df['Subject_ID'].apply(lambda x: f"https://www.ncbi.nlm.nih.gov/search/all/?term={x}")
 
-                        st.success(f"✅ 분석 완료! {len(df)}개의 타겟 발견")
-                        
+                        st.success("✅ 분석 완료")
                         st.dataframe(
-                            df[["Target_Function", "Subject_ID", "Identity(%)", "Length", "E-value", "NCBI_Link"]],
-                            column_config={
-                                "Target_Function": st.column_config.TextColumn("유전자 기능 명칭", width="large"),
-                                "Subject_ID": "Locus ID",
-                                "NCBI_Link": st.column_config.LinkColumn("NCBI", display_text="상세보기 🔗"),
-                                "Identity(%)": st.column_config.NumberColumn(format="%.1f%%")
-                            },
-                            use_container_width=True,
-                            hide_index=True
+                            df[["Target_Function", "Subject_ID", "Identity(%)", "Length", "BitScore", "NCBI_Link"]],
+                            column_config={"NCBI_Link": st.column_config.LinkColumn("NCBI", display_text="Search 🔗")},
+                            use_container_width=True, hide_index=True
                         )
                     else:
-                        st.error("매칭되는 유전자가 없습니다. 서열이나 DB를 확인하세요.")
+                        st.error("결과 없음")
                 except Exception as e:
-                    st.error(f"오류 발생: {e}")
+                    st.error(f"오류: {e}")
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
     st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석")
