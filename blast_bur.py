@@ -111,41 +111,39 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene조정 및 파일형식 변환"
 ])
 with tab1:
-    st.header("🧬 재선충(PWN) 표적 유전자 신속 분석")
-    st.markdown("프라이머 서열을 분석하여 가장 신뢰도 높은 표적 유전자를 상단에 표시합니다.")
+    st.header("🧬 재선충(PWN) 표적 유전자 분석 (NCBI 최적화 모드)")
+    st.markdown("NCBI Primer-BLAST와 동일한 알고리즘 설정을 적용하여 로컬에서 고속 분석합니다.")
 
-    # [1. 이름표 데이터 로딩]
+    # [1. 이름표 로드]
     @st.cache_data
-    def get_gene_annotations_v_final():
+    def get_gene_annotations_v_ncbi():
         mapping = {}
         current_dir = os.path.dirname(os.path.abspath(__file__))
         fasta_path = os.path.join(current_dir, "pwn_pro_named.fa")
-        
         if os.path.exists(fasta_path):
             from Bio import SeqIO
             for record in SeqIO.parse(fasta_path, "fasta"):
                 full_desc = record.description
                 annotation = full_desc.split(" ", 1)[1] if " " in full_desc else "Hypothetical Protein"
-                # 특수기호(%0A 등) 정제
+                # 특수문자 정제
                 clean_anno = annotation.replace('%0A', ' ').replace('%2C', ',').replace('%20', ' ')
                 mapping[str(record.id).strip()] = clean_anno
         return mapping
 
     # [2. UI 섹션]
-    query_seq = st.text_area("분석할 프라이머/siRNA 서열 입력", height=100, 
-                             placeholder="예: ACTTCGCCCAACCAAACCT", key="final_pwn_app")
+    query_seq = st.text_area("프라이머 서열 입력", height=100, 
+                             placeholder="예: GCTTCACAGCAGTGCCAAG", key="pwn_ncbi_mode")
 
-    if st.button("표적 유전자 정밀 분석 실행 🚀", use_container_width=True):
-        if not query_seq or len(query_seq) < 15:
-            st.warning("신뢰도 높은 분석을 위해 15bp 이상의 서열을 입력해 주세요.")
+    if st.button("NCBI급 정밀 분석 실행 🚀", use_container_width=True):
+        if not query_seq or len(query_seq) < 7: # 프라이머는 짧으므로 기준 완화
+            st.warning("분석을 위해 서열을 입력해 주세요.")
         else:
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            # 새로 만든 DB 경로 (반드시 본인의 폴더명과 맞출 것)
             db_path = os.path.join(current_dir, "pwn_fixed_db", "pwn_fixed_db")
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
 
-            with st.spinner("재선충 전용 DB에서 최적의 매칭을 찾는 중..."):
+            with st.spinner("NCBI 알고리즘으로 분석 중..."):
                 try:
                     with open(temp_query, "w") as f:
                         f.write(f">Query\n{query_seq}")
@@ -153,13 +151,15 @@ with tab1:
                     import subprocess
                     import pandas as pd
 
-                    # [핵심] E-value 컷오프를 1000에서 0.01로 조정하여 노이즈 제거
-                    # -task blastn-short는 유지하되, 통계적 유의성을 높임
+                    # [핵심] NCBI Primer-BLAST의 내부 파라미터를 그대로 재현
                     cmd = [
                         "blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                         "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                        "-task", "blastn-short", 
-                        "-evalue", "0.01"  # 800씩 나오던 우연한 일치들을 여기서 다 쳐냅니다.
+                        "-task", "blastn-short", # 짧은 서열 전용 태스크
+                        "-word_size", "7",        # NCBI 기본값 (작을수록 더 정밀하게 찾음)
+                        "-evalue", "1000",       # 짧은 서열은 우연일 확률이 높으므로 범위를 넓힘
+                        "-dust", "no",           # 낮은 복잡도 필터링 해제 (정확도 향상)
+                        "-soft_masking", "false" # 마스킹 해제
                     ]
                     subprocess.run(cmd, capture_output=True, text=True)
 
@@ -170,37 +170,30 @@ with tab1:
                             "S_Start", "S_End", "E-value", "BitScore"
                         ])
 
-                        # 1. BitScore 기준 내림차순 정렬 (가장 강력한 결합이 위로)
-                        df = df.sort_values("BitScore", ascending=False)
+                        # 1. 100% 일치(Identity)하는 것과 긴 것(Length)을 최우선으로 정렬
+                        df = df.sort_values(by=["Identity(%)", "Length", "BitScore"], ascending=[False, False, False])
 
                         # 2. 이름표 매핑
-                        anno_map = get_gene_annotations_v_final()
-                        df['Target_Gene_Function'] = df['Subject_ID'].apply(lambda x: anno_map.get(str(x).strip(), "Unknown Function"))
+                        anno_map = get_gene_annotations_v_ncbi()
+                        df['Target_Function'] = df['Subject_ID'].apply(lambda x: anno_map.get(str(x).strip(), "Unknown Function"))
                         
-                        # 3. NCBI 검색 링크
+                        # 3. NCBI 링크
                         df['NCBI_Link'] = df['Subject_ID'].apply(lambda x: f"https://www.ncbi.nlm.nih.gov/search/all/?term={x}")
 
-                        st.success(f"✅ 분석 완료! 가장 유력한 {len(df)}개의 표적을 선별했습니다.")
-
-                        # [4. 결과 테이블 출력]
+                        st.success(f"✅ 분석 완료! NCBI와 동일한 조건으로 {len(df)}개의 타겟을 찾았습니다.")
+                        
                         st.dataframe(
-                            df[["Target_Gene_Function", "Subject_ID", "Identity(%)", "E-value", "BitScore", "NCBI_Link"]],
+                            df[["Target_Function", "Subject_ID", "Identity(%)", "Length", "E-value", "NCBI_Link"]],
                             column_config={
-                                "Target_Gene_Function": st.column_config.TextColumn("유전자 명칭/기능", width="large"),
-                                "Subject_ID": "Locus ID",
-                                "NCBI_Link": st.column_config.LinkColumn("NCBI", display_text="검색 🔗"),
-                                "Identity(%)": st.column_config.NumberColumn(format="%.1f%%"),
-                                "E-value": st.column_config.NumberColumn(format="%.2e"), # 지수 표기법 (1.2e-05 등)
-                                "BitScore": st.column_config.NumberColumn(format="%.1f")
+                                "Target_Function": st.column_config.TextColumn("유전자 기능 (NCBI Annotation)", width="large"),
+                                "NCBI_Link": st.column_config.LinkColumn("NCBI", display_text="상세보기 🔗"),
+                                "Identity(%)": st.column_config.NumberColumn(format="%.1f%%")
                             },
                             use_container_width=True,
                             hide_index=True
                         )
-                        
-                        st.download_button("결과 CSV 다운로드", data=df.to_csv(index=False), file_name="pwn_top_targets.csv")
                     else:
-                        st.error("매칭되는 유전자가 없습니다. E-value 기준을 통과하지 못했거나 서열이 다를 수 있습니다.")
-                        st.info("Tip: 서열이 너무 짧으면 E-value를 조금 더 높게 조정해야 할 수도 있습니다.")
+                        st.error("매칭되는 유전자가 없습니다. DB 버전이나 서열을 확인해 보세요.")
                 except Exception as e:
                     st.error(f"실행 오류: {e}")
 with tab2:
