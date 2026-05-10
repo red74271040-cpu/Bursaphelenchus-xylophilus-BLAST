@@ -111,71 +111,75 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene조정 및 파일형식 변환"
 ])
 with tab1:
-    st.header("🧬 재선충(PWN) 표적 유전자 분석 (정밀 매핑 모드)")
+    st.header("🧬 재선충(PWN) 타겟 분석 (후보군 확장 모드)")
 
-    query_seq = st.text_area("프라이머 서열 입력", height=100, key="v_final_final_real")
+    query_seq = st.text_area("프라이머 서열 입력", height=100, key="expand_candidates")
 
-    if st.button("분석 실행", use_container_width=True):
+    if st.button("전수 조사 분석 실행 🚀", use_container_width=True):
         if query_seq:
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            db_path = os.path.join(current_dir, "pwn_fixed_db", "pwn_fixed_db")
+            fasta_path = os.path.join(current_dir, "pwn_pro_named.fa")
+            db_path = os.path.join(current_dir, "pwn_final_db", "pwn_final_db")
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
-            fasta_path = os.path.join(current_dir, "pwn_pro_named.fa")
 
-            with st.spinner("데이터 분석 중..."):
+            with st.spinner("잠재적 후보군까지 모두 검색 중..."):
                 try:
-                    # 1. BLAST 실행
+                    # 1. 이름표 로딩 (이전과 동일하게 실시간 로딩)
+                    anno_map = {}
+                    if os.path.exists(fasta_path):
+                        with open(fasta_path, "r", encoding="utf-8", errors="ignore") as f:
+                            for line in f:
+                                if line.startswith(">"):
+                                    header = line.strip().lstrip(">")
+                                    parts = header.split(None, 1)
+                                    if len(parts) >= 2:
+                                        anno_map[parts[0].strip()] = parts[1].strip()
+
+                    # 2. BLAST 실행 - 후보군을 늘리기 위한 파라미터 조정
                     with open(temp_query, "w") as f:
                         f.write(f">Query\n{query_seq}")
 
                     import subprocess
                     import pandas as pd
 
-                    subprocess.run([
+                    cmd = [
                         "blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
                         "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                        "-task", "blastn-short", "-word_size", "7", "-evalue", "1000"
-                    ], capture_output=True)
+                        "-task", "blastn-short",
+                        "-word_size", "4",          # 7에서 4로 낮춤 (더 짧은 부분 일치도 다 찾아냄)
+                        "-evalue", "10000",         # 1000에서 10000으로 확장 (통계적 기준 대폭 완화)
+                        "-perc_identity", "60",     # 일치율이 60%만 돼도 일단 다 보여줌
+                        "-num_alignments", "100",    # 상위 100개까지 출력
+                        "-dust", "no"
+                    ]
+                    subprocess.run(cmd, capture_output=True, text=True)
 
                     if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                        df = pd.read_csv(result_csv, names=["Query", "Subject_ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
-                        
-                        # 2. 이름표 실시간 로딩 (오류 가능성 차단)
-                        anno_map = {}
-                        if os.path.exists(fasta_path):
-                            with open(fasta_path, "r", encoding="utf-8") as f:
-                                for line in f:
-                                    if line.startswith(">"):
-                                        # ">ID 설명" 구조에서 정확히 분리
-                                        header = line.strip().lstrip(">")
-                                        parts = header.split(" ", 1)
-                                        gid = parts[0].strip() # BXY_XXXXXXX.1
-                                        gname = parts[1].strip() if len(parts) > 1 else "Hypothetical Protein"
-                                        # 특수문자 제거
-                                        gname = gname.replace("%0A", " ").replace("%20", " ")
-                                        anno_map[gid] = gname
+                        df = pd.read_csv(result_csv, names=[
+                            "Query", "Subject_ID", "Identity(%)", "Length", 
+                            "Mismatch", "Gaps", "Q_Start", "Q_End", 
+                            "S_Start", "S_End", "E-value", "BitScore"
+                        ])
 
-                        # 3. 데이터 정리 및 출력
-                        df = df.sort_values(by=["Identity(%)", "BitScore"], ascending=False)
+                        # 3. 데이터 정리 및 이름표 매핑
+                        df['Target_Function'] = df['Subject_ID'].apply(lambda x: anno_map.get(str(x).strip(), f"Unknown ({x})"))
                         
-                        # 중요: 검색된 ID가 이름표에 없으면 "ID Mismatch"라고 표시하게 함
-                        df['Target_Function'] = df['Subject_ID'].apply(lambda x: anno_map.get(str(x).strip(), f"ID Not Found in FASTA ({x})"))
-                        df['NCBI_Link'] = df['Subject_ID'].apply(lambda x: f"https://www.ncbi.nlm.nih.gov/search/all/?term={x}")
+                        # 4. 정렬 순서 변경 (Identity와 Length가 높은 것이 무조건 위로)
+                        # E-value는 짧은 서열에서 숫자가 커질 수밖에 없으므로 정렬 기준에서 뒤로 뺍니다.
+                        df = df.sort_values(by=["Identity(%)", "Length", "BitScore"], ascending=[False, False, False])
 
-                        st.success("✅ 분석이 완료되었습니다.")
+                        st.success(f"✅ 분석 완료! 총 {len(df)}개의 후보 유전자를 찾았습니다.")
+                        
+                        # 결과 출력 (E-value는 참고용으로만 표시)
                         st.dataframe(
-                            df[["Target_Function", "Subject_ID", "Identity(%)", "Length", "BitScore", "NCBI_Link"]],
-                            column_config={
-                                "Target_Function": st.column_config.TextColumn("유전자 기능 (Annotation)", width="large"),
-                                "NCBI_Link": st.column_config.LinkColumn("NCBI", display_text="Search 🔗")
-                            },
+                            df[["Target_Function", "Subject_ID", "Identity(%)", "Length", "E-value", "BitScore"]],
                             use_container_width=True, hide_index=True
                         )
                     else:
-                        st.error("결과가 없습니다. 서열을 확인하세요.")
+                        st.error("매칭되는 후보군이 전혀 없습니다. 서열을 확인하거나 DB를 재검토해야 합니다.")
                 except Exception as e:
-                    st.error(f"오류 발생: {e}")
+                    st.error(f"실행 중 오류: {e}")
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
     st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석")
