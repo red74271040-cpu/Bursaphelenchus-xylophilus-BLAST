@@ -111,61 +111,101 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene조정 및 파일형식 변환"
 ])
 with tab1:
-    st.header("🔬 RNAi 프라이머 표적 유전자 분석")
+    st.header("🧬 재선충(PWN) 표적 유전자 신속 분석")
+    st.markdown("프라이머 서열을 입력하면, 재선충 게놈 내 타겟 유전자 리스트와 기능을 출력합니다.")
 
+    # [1. 이름표 데이터베이스 구축]
     @st.cache_data
-    def get_final_descriptions():
-        desc_dict = {}
+    def get_gene_annotations():
+        mapping = {}
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        # 이제 이 파일의 ID가 곧 BLAST의 결과 ID가 됩니다.
-        target_path = os.path.join(current_dir, "pwn_pro_named.fa")
+        # 사용자님이 새로 DB를 구울 때 쓴 그 원본 이름표 파일
+        fasta_path = os.path.join(current_dir, "pwn_pro_named.fa")
         
-        if os.path.exists(target_path):
+        if os.path.exists(fasta_path):
             from Bio import SeqIO
-            for record in SeqIO.parse(target_path, "fasta"):
+            for record in SeqIO.parse(fasta_path, "fasta"):
+                # record.id: BXY_0416800.1
+                # record.description: BXY_0416800.1 7TM GPCR, serpentine receptor...
                 full_desc = record.description
-                name = full_desc.split(" ", 1)[1] if " " in full_desc else "Hypothetical Protein"
-                desc_dict[str(record.id)] = name
-        return desc_dict
+                if " " in full_desc:
+                    # ID를 제외한 나머지 전체 설명을 기능으로 저장
+                    annotation = full_desc.split(" ", 1)[1]
+                else:
+                    annotation = "Hypothetical Protein"
+                
+                # 정제된 ID를 키로 저장
+                mapping[str(record.id).strip()] = annotation
+        return mapping
 
-    query_seq = st.text_area("프라이머 서열 입력", height=100, key="v_resolved")
+    # [2. UI 입력창]
+    query_seq = st.text_area("분석할 프라이머/siRNA 서열 입력", height=100, 
+                             placeholder="예: ACTTCGCCCAACCAAACCT", key="pwn_final_ui")
 
-    if st.button("분석 실행", use_container_width=True):
-        if query_seq:
+    if st.button("표적 유전자 검색 실행 🚀", use_container_width=True):
+        if not query_seq or len(query_seq) < 15:
+            st.warning("분석을 위해 15bp 이상의 서열을 입력해 주세요.")
+        else:
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            # 새로 만든 DB 경로로 지정
+            # [중요] 새로 만든 DB 폴더와 파일명을 정확히 입력하세요
             db_path = os.path.join(current_dir, "pwn_fixed_db", "pwn_fixed_db")
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
 
-            with st.spinner("분석 중..."):
-                with open(temp_query, "w") as f:
-                    f.write(f">Query\n{query_seq}")
+            with st.spinner("재선충 전용 데이터베이스 분석 중..."):
+                try:
+                    # 쿼리 파일 생성
+                    with open(temp_query, "w") as f:
+                        f.write(f">Query_Sequence\n{query_seq}")
 
-                import subprocess
-                import pandas as pd
-                
-                # BLAST 실행
-                subprocess.run(["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
-                               "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                               "-task", "blastn-short", "-evalue", "1000"])
+                    import subprocess
+                    import pandas as pd
 
-                if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                    df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
-                    
-                    rich_names = get_final_descriptions()
-                    
-                    # 이제 ID가 똑같으므로 아주 심플하게 매칭됩니다!
-                    df['Target Function'] = df['Locus ID'].apply(lambda x: rich_names.get(str(x), "Unknown Protein"))
-                    df['NCBI Link'] = df['Locus ID'].apply(lambda x: f"https://www.ncbi.nlm.nih.gov/search/all/?term={x}")
+                    # BLAST 실행 (짧은 서열 최적화 옵션)
+                    cmd = [
+                        "blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
+                        "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                        "-task", "blastn-short", "-evalue", "1000"
+                    ]
+                    subprocess.run(cmd, capture_output=True, text=True)
 
-                    st.dataframe(
-                        df[["Target Function", "Locus ID", "NCBI Link", "Identity(%)", "E-value"]],
-                        column_config={"NCBI Link": st.column_config.LinkColumn("NCBI", display_text="Search 🔗")},
-                        use_container_width=True, hide_index=True
-                    )
-                else:
-                    st.error("결과가 없습니다. 서열이나 DB를 확인하세요.")
+                    if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
+                        df = pd.read_csv(result_csv, names=[
+                            "Query", "Subject_ID", "Identity(%)", "Length", 
+                            "Mismatch", "Gaps", "Q_Start", "Q_End", 
+                            "S_Start", "S_End", "E-value", "BitScore"
+                        ])
+
+                        # 1. E-value 순으로 정렬 (가장 정확한 타겟이 위로)
+                        df = df.sort_values("E-value")
+
+                        # 2. 이름표 파일에서 실제 유전자 기능 매핑
+                        anno_map = get_gene_annotations()
+                        df['Target_Gene_Function'] = df['Subject_ID'].apply(lambda x: anno_map.get(str(x).strip(), "Unknown Function"))
+
+                        # 3. NCBI 검색 링크 생성
+                        df['NCBI_Link'] = df['Subject_ID'].apply(lambda x: f"https://www.ncbi.nlm.nih.gov/search/all/?term={x}")
+
+                        st.success(f"✅ 분석 완료! 가장 유력한 표적을 포함해 {len(df)}개의 결과를 찾았습니다.")
+
+                        # [4. 결과 출력 테이블]
+                        st.dataframe(
+                            df[["Target_Gene_Function", "Subject_ID", "Identity(%)", "E-value", "NCBI_Link"]],
+                            column_config={
+                                "Target_Gene_Function": st.column_config.TextColumn("유전자 기능 (Target Name)", width="large"),
+                                "Subject_ID": "Locus ID",
+                                "NCBI_Link": st.column_config.LinkColumn("NCBI", display_text="검색 🔗"),
+                                "Identity(%)": st.column_config.NumberColumn(format="%.1f%%")
+                            },
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                        
+                        st.download_button("결과 파일(CSV) 저장", data=df.to_csv(index=False), file_name="pwn_target_results.csv")
+                    else:
+                        st.error("매칭되는 재선충 유전자가 없습니다. 서열을 다시 확인해 보세요.")
+                except Exception as e:
+                    st.error(f"실행 중 오류가 발생했습니다: {e}")
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
     st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석")
