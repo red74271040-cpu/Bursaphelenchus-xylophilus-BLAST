@@ -202,7 +202,6 @@ import tempfile
 import streamlit as st
 import os
 import pandas as pd
-from sifi_pipeline import SifiPipeline
 
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
