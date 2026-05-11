@@ -1,6 +1,6 @@
 #모듈 불러오기
 import matplotlib.pyplot as plt
-from matplotlib.ticker import ScalarFormatter  # <-- 이 줄이 빠져서 발생하는 에러입니다.
+from matplotlib.ticker import ScalarFormatter, NullFormatter # <-- 이 줄이 빠져서 발생하는 에러입니다.
 import streamlit as st
 import pandas as pd
 import io
