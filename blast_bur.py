@@ -111,21 +111,23 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene조정 및 파일형식 변환"
 ])
 with tab1:
-    st.header("🧬 재선충(PWN) 타겟 분석 (후보군 확장 모드)")
+    st.header("🧬 NCBI 스타일 고속 Nucleotide 분석")
+    st.markdown("NCBI Nucleotide BLAST와 동일한 알고리즘으로 타겟 후보군을 정밀 탐색합니다.")
 
-    query_seq = st.text_area("프라이머 서열 입력", height=100, key="expand_candidates")
+    query_seq = st.text_area("프라이머/siRNA 서열 입력", height=100, key="ncbi_style_final")
 
-    if st.button("전수 조사 분석 실행 🚀", use_container_width=True):
+    if st.button("NCBI 스타일 분석 실행 🚀", use_container_width=True):
         if query_seq:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             fasta_path = os.path.join(current_dir, "pwn_pro_named.fa")
+            # [중요] 반드시 새로 만든 Nucleotide DB 경로로 지정하세요
             db_path = os.path.join(current_dir, "pwn_final_db", "pwn_final_db")
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
 
-            with st.spinner("잠재적 후보군까지 모두 검색 중..."):
+            with st.spinner("NCBI 엔진 가동 중..."):
                 try:
-                    # 1. 이름표 로딩 (이전과 동일하게 실시간 로딩)
+                    # 1. 이름표 로딩
                     anno_map = {}
                     if os.path.exists(fasta_path):
                         with open(fasta_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -136,7 +138,7 @@ with tab1:
                                     if len(parts) >= 2:
                                         anno_map[parts[0].strip()] = parts[1].strip()
 
-                    # 2. BLAST 실행 - 후보군을 늘리기 위한 파라미터 조정
+                    # 2. BLAST 실행 - NCBI Nucleotide BLAST(blastn) 최적화 파라미터
                     with open(temp_query, "w") as f:
                         f.write(f">Query\n{query_seq}")
 
@@ -144,14 +146,17 @@ with tab1:
                     import pandas as pd
 
                     cmd = [
-                        "blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
+                        "blastn", 
+                        "-query", temp_query, 
+                        "-db", db_path, 
+                        "-out", result_csv,
                         "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                        "-task", "blastn-short",
-                        "-word_size", "4",          # 7에서 4로 낮춤 (더 짧은 부분 일치도 다 찾아냄)
-                        "-evalue", "10000",         # 1000에서 10000으로 확장 (통계적 기준 대폭 완화)
-                        "-perc_identity", "60",     # 일치율이 60%만 돼도 일단 다 보여줌
-                        "-num_alignments", "100",    # 상위 100개까지 출력
-                        "-dust", "no"
+                        "-task", "blastn",         # blastn-short 대신 일반 blastn 사용 (더 정밀함)
+                        "-word_size", "11",        # NCBI 기본값
+                        "-evalue", "10",           # NCBI 기본 신뢰도 (숫자가 낮을수록 엄격)
+                        "-perc_identity", "70",    # 70% 이상 일치하는 후보군 모두 수집
+                        "-num_alignments", "50",   # 상위 50개 후보군 표시
+                        "-dust", "yes"             # NCBI 기본 필터링 활성화
                     ]
                     subprocess.run(cmd, capture_output=True, text=True)
 
@@ -162,24 +167,27 @@ with tab1:
                             "S_Start", "S_End", "E-value", "BitScore"
                         ])
 
-                        # 3. 데이터 정리 및 이름표 매핑
+                        # 3. 데이터 정리
                         df['Target_Function'] = df['Subject_ID'].apply(lambda x: anno_map.get(str(x).strip(), f"Unknown ({x})"))
                         
-                        # 4. 정렬 순서 변경 (Identity와 Length가 높은 것이 무조건 위로)
-                        # E-value는 짧은 서열에서 숫자가 커질 수밖에 없으므로 정렬 기준에서 뒤로 뺍니다.
-                        df = df.sort_values(by=["Identity(%)", "Length", "BitScore"], ascending=[False, False, False])
+                        # NCBI와 동일하게 BitScore(결합 강도) 순으로 정렬
+                        df = df.sort_values(by="BitScore", ascending=False)
 
-                        st.success(f"✅ 분석 완료! 총 {len(df)}개의 후보 유전자를 찾았습니다.")
+                        st.success(f"✅ 분석 완료! {len(df)}개의 유효한 후보군을 찾았습니다.")
                         
-                        # 결과 출력 (E-value는 참고용으로만 표시)
+                        # 보기 좋게 포맷팅
                         st.dataframe(
                             df[["Target_Function", "Subject_ID", "Identity(%)", "Length", "E-value", "BitScore"]],
+                            column_config={
+                                "E-value": st.column_config.NumberColumn(format="%.2e"), # 0.00001 -> 1.00e-05
+                                "Identity(%)": st.column_config.NumberColumn(format="%.1f%%")
+                            },
                             use_container_width=True, hide_index=True
                         )
                     else:
-                        st.error("매칭되는 후보군이 전혀 없습니다. 서열을 확인하거나 DB를 재검토해야 합니다.")
+                        st.error("NCBI 기준을 충족하는 매칭이 없습니다. 서열이 너무 짧으면 '-task blastn-short'가 필요할 수 있습니다.")
                 except Exception as e:
-                    st.error(f"실행 중 오류: {e}")
+                    st.error(f"실행 오류: {e}")
 with tab2:
     st.header("si-Fi RNAi 분석 엔진")
     st.info("모드 선택에 따라 siRNA 효율성 측정 또는 타 생물군 오프타겟 위험도를 분석")
