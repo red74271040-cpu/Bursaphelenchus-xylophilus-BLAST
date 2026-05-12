@@ -113,96 +113,81 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene visualization",
     "Gene조정 및 파일형식 변환"
 ])
+import streamlit as st
+import pandas as pd
+from Bio import SeqIO
+import io
+import re
+import urllib.parse
+
 with tab1:
-    st.header("🧬 NCBI 스타일 고속 Nucleotide 분석")
-    st.markdown("NCBI Nucleotide BLAST와 동일한 알고리즘으로 타겟 후보군을 정밀 탐색합니다.")
+    st.header("🔍 프라이머-단백질 정보 통합 검색")
+    
+    # 1. 사용자 입력 섹션
+    col_input1, col_input2 = st.columns(2)
+    with col_input1:
+        primer_seq = st.text_input("분석할 프라이머 서열 입력", placeholder="예: ATGC...")
+        uploaded_cds = st.file_uploader("CDS FNA 파일 업로드", type=["fna", "fasta"])
+    
+    with col_input2:
+        st.write("💡 **기능 안내**")
+        st.write("- CDS 헤더의 `protein_id`를 기반으로 단백질 정보를 연동합니다.")
+        st.write("- 결과 테이블의 'NCBI 링크'를 통해 상세 정보를 확인할 수 있습니다.")
 
-    query_seq = st.text_area("프라이머/siRNA 서열 입력", height=100, key="ncbi_style_final")
+    # 2. 분석 로직
+    if uploaded_cds is not None:
+        # 파일 읽기 및 레코드 리스트 생성
+        stringio = io.StringIO(uploaded_cds.getvalue().decode("utf-8"))
+        records = list(SeqIO.parse(stringio, "fasta"))
+        
+        results = []
+        
+        # 정규표현식으로 Protein ID(CAG...) 및 Locus Tag(BXYJ...) 추출
+        # 제공된 예시 헤더 구조를 반영합니다.
+        for rec in records:
+            header = rec.description
+            
+            # Protein ID (CAG로 시작하는 번호) 추출
+            pid_match = re.search(r'protein_id=(CAG\d+\.\d+)', header)
+            pid = pid_match.group(1) if pid_match else "N/A"
+            
+            # Locus Tag (BXYJ_LOCUS... 또는 BXY...) 추출
+            locus_match = re.search(r'locus_tag=([\w_]+)', header)
+            locus_id = locus_match.group(1) if locus_id_match else rec.id.split('|')[-1]
+            
+            # 단백질 이름 (protein_id를 매개로 이름 연동 - 예시 데이터 기반)
+            # 실제 구현 시 별도의 mapping dictionary를 사용하거나 헤더의 설명을 사용합니다.
+            prot_name = "Mapping required..." # 실제 단백질명 데이터와 연동될 부분
+            
+            # NCBI 검색 URL 생성 (Locus ID 기준)
+            ncbi_url = f"https://www.ncbi.nlm.nih.gov/search/all/?term={urllib.parse.quote(locus_id)}"
+            
+            results.append({
+                "Primer Sequence": primer_seq if primer_seq else "Not entered",
+                "Locus ID": locus_id,
+                "Protein ID": pid,
+                "Protein Name": prot_name,
+                "NCBI Search": ncbi_url
+            })
 
-    if st.button("NCBI 스타일 분석 실행 🚀", use_container_width=True):
-        if query_seq:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            fasta_path = os.path.join(current_dir, "pwn_pro_named.fa")
-            # [중요] 반드시 새로 만든 Nucleotide DB 경로로 지정하세요
-            db_path = os.path.join(current_dir, "pwn_final_db", "pwn_final_db")
-            temp_query = os.path.join(current_dir, "temp_query.fa")
-            result_csv = os.path.join(current_dir, "blast_result.csv")
+        # 3. 결과 테이블 출력
+        st.markdown("---")
+        st.subheader("📋 통합 분석 결과")
+        
+        df = pd.DataFrame(results)
+        
+        # NCBI 링크를 클릭 가능한 형태로 변환
+        def make_clickable(link):
+            return f'<a href="{link}" target="_blank">🔍 NCBI에서 보기</a>'
 
-            with st.spinner("NCBI 엔진 가동 중..."):
-                try:
-                    # 1. 이름표 로딩
-                    anno_map = {}
-                    if os.path.exists(fasta_path):
-                        with open(fasta_path, "r", encoding="utf-8", errors="ignore") as f:
-                            for line in f:
-                                if line.startswith(">"):
-                                    header = line.strip().lstrip(">")
-                                    parts = header.split(None, 1)
-                                    if len(parts) >= 2:
-                                        anno_map[parts[0].strip()] = parts[1].strip()
-
-                    # 2. BLAST 실행 - NCBI Nucleotide BLAST(blastn) 최적화 파라미터
-                    with open(temp_query, "w") as f:
-                        f.write(f">Query\n{query_seq}")
-
-                    import subprocess
-                    import pandas as pd
-
-                    cmd = [
-                        "blastn", 
-                        "-query", temp_query, 
-                        "-db", db_path, 
-                        "-out", result_csv,
-                        "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                        "-task", "blastn",         # blastn-short 대신 일반 blastn 사용 (더 정밀함)
-                        "-word_size", "11",        # NCBI 기본값
-                        "-evalue", "10",           # NCBI 기본 신뢰도 (숫자가 낮을수록 엄격)
-                        "-perc_identity", "70",    # 70% 이상 일치하는 후보군 모두 수집
-                        "-num_alignments", "50",   # 상위 50개 후보군 표시
-                        "-dust", "yes"             # NCBI 기본 필터링 활성화
-                    ]
-                    subprocess.run(cmd, capture_output=True, text=True)
-
-                    if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                        df = pd.read_csv(result_csv, names=[
-                            "Query", "Subject_ID", "Identity(%)", "Length", 
-                            "Mismatch", "Gaps", "Q_Start", "Q_End", 
-                            "S_Start", "S_End", "E-value", "BitScore"
-                        ])
-
-                        # 3. 데이터 정리
-                        df['Target_Function'] = df['Subject_ID'].apply(lambda x: anno_map.get(str(x).strip(), f"Unknown ({x})"))
-                        
-                        # NCBI와 동일하게 BitScore(결합 강도) 순으로 정렬
-                        df = df.sort_values(by="BitScore", ascending=False)
-
-                        st.success(f"✅ 분석 완료! {len(df)}개의 유효한 후보군을 찾았습니다.")
-                        
-                        # 보기 좋게 포맷팅
-                        st.dataframe(
-                            df[["Target_Function", "Subject_ID", "Identity(%)", "Length", "E-value", "BitScore"]],
-                            column_config={
-                                "E-value": st.column_config.NumberColumn(format="%.2e"), # 0.00001 -> 1.00e-05
-                                "Identity(%)": st.column_config.NumberColumn(format="%.1f%%")
-                            },
-                            use_container_width=True, hide_index=True
-                        )
-                    else:
-                        st.error("NCBI 기준을 충족하는 매칭이 없습니다. 서열이 너무 짧으면 '-task blastn-short'가 필요할 수 있습니다.")
-                except Exception as e:
-                    st.error(f"실행 오류: {e}")
-import streamlit as st
-import os
-import json
-import pandas as pd
-import tempfile
-# SifiPipeline 클래스는 코드 상단에서 미리 import 하는 것을 권장합니다.
-# from sifi_pipeline import SifiPipeline 
-
-import streamlit as st
-import os
-import pandas as pd
-
+        df['NCBI Search'] = df['NCBI Search'].apply(make_clickable)
+        
+        # HTML 렌더링을 사용하여 테이블 표시
+        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        
+        # CSV 다운로드 기능
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📊 결과 보고서(CSV) 다운로드", csv, "primer_mapping_results.csv", "text/csv")
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
     st.info("CDS 파일을 업로드하여 최적의 siRNA 후보군을 탐색합니다.")
