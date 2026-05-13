@@ -113,33 +113,20 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene visualization",
     "Gene조정 및 파일형식 변환"
 ])
-import streamlit as st
-import pandas as pd
-from Bio import SeqIO
-import io
+
 import re
 import urllib.parse
-
-import streamlit as st
-import pandas as pd
-import urllib.parse
-import os
-
-import streamlit as st
-import pandas as pd
 import subprocess
-import os
 import tempfile
 import re
 
-def get_clean_id(header):
-    """헤더에서 숫자와 문자가 조합된 핵심 ID 추출 (예: BXY_1538900 또는 BXYJ_LOCUS1)"""
-    # 숫자 부분만 추출하거나 특정 패턴(BXY)을 찾음
-    match = re.search(r'(BXYJ?_LOCUS\d+|BXY_\d+)', header)
-    if match:
-        return match.group()
-    # 패턴이 없을 경우 첫 단어 반환
-    return header.split()[0].lstrip('>').split('|')[-1]
+def normalize_id(full_id):
+    # .1 같은 버전 번호를 제거하거나 공통 접두사만 추출
+    return full_id.split('.')[0].strip()
+
+# 적용 시
+df['Normalized ID'] = df['Locus ID'].apply(normalize_id)
+df['Protein Product'] = df['Normalized ID'].map(lambda x: prot_names.get(x, "Unknown"))
 
 with tab1:
     st.header("primer를 통한 target찾기")
@@ -197,7 +184,7 @@ with tab1:
                     st.success(f"분석 완료! 타겟 유전자를 확인하세요.")
                     st.dataframe(
                         df[["Target Function", "Locus ID", "NCBI Link", "Identity(%)", "E-value"]],
-                        column_config={"NCBI Link": st.column_config.LinkColumn("NCBI", display_text="Search 🔗")},
+                        column_config={"NCBI Link": st.column_config.LinkColumn("NCBI", display_text="Search ")},
                         use_container_width=True, hide_index=True
                     )
                 else:
