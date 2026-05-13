@@ -124,28 +124,7 @@ import re
 
 
 
-# 2. 함수 정의 (호출보다 위에 있어야 함)
-def normalize_id(full_id):
-    if full_id is None or str(full_id) == 'nan':
-        return ""
-    # 데이터를 강제로 문자로 바꾸고 분리
-    return str(full_id).split('.')[0].strip()
 
-
-
-if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-    # 3. CSV 읽을 때 컬럼명 명시
-    df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
-    
-    # 4. 안전하게 적용 (astype(str) 추가)
-    if 'Locus ID' in df.columns:
-        df['Normalized ID'] = df['Locus ID'].astype(str).apply(normalize_id)
-        
-        # 이름 매핑 (get_descriptions()가 사전 데이터를 반환한다고 가정)
-        names_dict = get_descriptions()
-        df['Target Function'] = df['Normalized ID'].map(lambda x: names_dict.get(x, "No Map Found"))
-        
-        st.dataframe(df[["Target Function", "Normalized ID", "Identity(%)"]])
 with tab1:
     st.header("primer를 통한 target찾기")
 
@@ -178,35 +157,34 @@ with tab1:
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
 
-            with st.spinner("재선충 전용 DB 검색 중..."):
-                with open(temp_query, "w") as f:
-                    f.write(f">Query\n{query_seq}")
+            def normalize_id(full_id):
+                if pd.isna(full_id): return ""
+                return str(full_id).split('.')[0].strip()
 
-                import subprocess
-                import pandas as pd
+          \if st.button("타겟 유전자 분석 실행"):
+              if query_seq:
+                  with st.spinner("분석 중..."):
+            # 1. 쿼리 파일 생성
+                      with open(temp_query, "w") as f:
+                          f.write(f">Query\n{query_seq}")
+            
+            # 2. BLAST 실행
+                      subprocess.run(["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
+                            "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                            "-task", "blastn-short", "-evalue", "1000"])
+
+            # 3. 결과 처리 (이 로직은 반드시 버튼 안쪽에 있어야 안전합니다)
+                      if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
+                          df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
                 
-                # BLAST 실행
-                subprocess.run(["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
-                               "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                               "-task", "blastn-short", "-evalue", "1000"])
-
-                if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                    df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
-                    
-                    names = get_descriptions()
-                    
-                    # [매핑] 이제 1:1로 완벽하게 매칭됩니다!
-                    df['Target Function'] = df['Locus ID'].apply(lambda x: names.get(str(x), "No Map Found"))
-                    df['NCBI Link'] = df['Locus ID'].apply(lambda x: f"https://www.ncbi.nlm.nih.gov/search/all/?term={x}")
-
-                    st.success(f"분석 완료! 타겟 유전자를 확인하세요.")
-                    st.dataframe(
-                        df[["Target Function", "Locus ID", "NCBI Link", "Identity(%)", "E-value"]],
-                        column_config={"NCBI Link": st.column_config.LinkColumn("NCBI", display_text="Search ")},
-                        use_container_width=True, hide_index=True
-                    )
-                else:
-                    st.error("매칭되는 유전자가 없습니다. 서열을 확인해 주세요.")
+                # 정규화 및 매핑
+                          df['Normalized ID'] = df['Locus ID'].apply(normalize_id)
+                         names_dict = get_descriptions()
+                          df['Target Function'] = df['Normalized ID'].map(lambda x: names_dict.get(x, "No Map Found"))
+                
+                          st.dataframe(df[["Target Function", "Locus ID", "Identity(%)", "E-value"]])
+                      else:
+                          st.error("결과가 없습니다.")
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
     st.info("CDS 파일을 업로드하여 최적의 siRNA 후보군을 탐색합니다.")
