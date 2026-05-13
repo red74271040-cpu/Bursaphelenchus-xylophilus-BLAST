@@ -120,74 +120,59 @@ import io
 import re
 import urllib.parse
 
+import streamlit as st
+import pandas as pd
+import urllib.parse
+import os
+
 with tab1:
-    st.header("🔍 프라이머-단백질 정보 통합 검색")
-    
-    # 1. 사용자 입력 섹션
-    col_input1, col_input2 = st.columns(2)
-    with col_input1:
-        primer_seq = st.text_input("분석할 프라이머 서열 입력", placeholder="예: ATGC...")
-        uploaded_cds = st.file_uploader("CDS FNA 파일 업로드", type=["fna", "fasta"])
-    
-    with col_input2:
-        st.write("💡 **기능 안내**")
-        st.write("- CDS 헤더의 `protein_id`를 기반으로 단백질 정보를 연동합니다.")
-        st.write("- 결과 테이블의 'NCBI 링크'를 통해 상세 정보를 확인할 수 있습니다.")
+    st.header("🔍 빠른 서열 분석 및 NCBI 검색")
+    st.info("서열을 입력하고 Locus ID를 통해 단백질 정보를 NCBI에서 즉시 확인하세요.")
 
-    # 2. 분석 로직
-    if uploaded_cds is not None:
-        # 파일 읽기 및 레코드 리스트 생성
-        stringio = io.StringIO(uploaded_cds.getvalue().decode("utf-8"))
-        records = list(SeqIO.parse(stringio, "fasta"))
+    # 1. 입력 섹션
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # 분석할 서열 입력 (프라이머나 특정 서열)
+        input_seq = st.text_area("분석할 서열(Sequence) 입력", placeholder="ATGC...", height=100)
+    
+    with col2:
+        # 검색할 Locus ID 입력 (예: BXYJ_LOCUS1)
+        locus_id = st.text_input("Locus ID 입력", placeholder="예: BXYJ_LOCUS1")
         
-        results = []
-        
-        # 정규표현식으로 Protein ID(CAG...) 및 Locus Tag(BXYJ...) 추출
-        # 제공된 예시 헤더 구조를 반영합니다.
-        for rec in records:
-            header = rec.description
-            
-            # Protein ID (CAG로 시작하는 번호) 추출
-            pid_match = re.search(r'protein_id=(CAG\d+\.\d+)', header)
-            pid = pid_match.group(1) if pid_match else "N/A"
-            
-            # Locus Tag (BXYJ_LOCUS... 또는 BXY...) 추출
-            locus_match = re.search(r'locus_tag=([\w_]+)', header)
-            locus_id = locus_match.group(1) if locus_id_match else rec.id.split('|')[-1]
-            
-            # 단백질 이름 (protein_id를 매개로 이름 연동 - 예시 데이터 기반)
-            # 실제 구현 시 별도의 mapping dictionary를 사용하거나 헤더의 설명을 사용합니다.
-            prot_name = "Mapping required..." # 실제 단백질명 데이터와 연동될 부분
-            
-            # NCBI 검색 URL 생성 (Locus ID 기준)
-            ncbi_url = f"https://www.ncbi.nlm.nih.gov/search/all/?term={urllib.parse.quote(locus_id)}"
-            
-            results.append({
-                "Primer Sequence": primer_seq if primer_seq else "Not entered",
-                "Locus ID": locus_id,
-                "Protein ID": pid,
-                "Protein Name": prot_name,
-                "NCBI Search": ncbi_url
-            })
+        # NCBI 검색 버튼 생성
+        if locus_id:
+            encoded_locus = urllib.parse.quote(locus_id.strip())
+            ncbi_link = f"https://www.ncbi.nlm.nih.gov/search/all/?term={encoded_locus}"
+            st.markdown(f'<a href="{ncbi_link}" target="_blank"><button style="width:100%; cursor:pointer;">🌐 NCBI에서 ID 검색</button></a>', unsafe_allow_html=True)
 
-        # 3. 결과 테이블 출력
+    # 2. 결과 정리 (입력값이 있을 때만 표시)
+    if input_seq or locus_id:
         st.markdown("---")
-        st.subheader("📋 통합 분석 결과")
+        st.subheader("📋 입력 정보 요약")
         
-        df = pd.DataFrame(results)
+        # 상대 경로를 활용한 현재 작업 환경 확인
+        current_work_dir = os.path.dirname(os.path.abspath(__file__))
         
-        # NCBI 링크를 클릭 가능한 형태로 변환
-        def make_clickable(link):
-            return f'<a href="{link}" target="_blank">🔍 NCBI에서 보기</a>'
+        summary_data = {
+            "항목": ["입력 서열", "Locus ID", "서열 길이", "작업 경로(상대)"],
+            "내용": [
+                input_seq[:50] + "..." if len(input_seq) > 50 else input_seq,
+                locus_id if locus_id else "미입력",
+                f"{len(input_seq)} bp",
+                f"./{os.path.basename(current_work_dir)}"
+            ]
+        }
+        
+        st.table(pd.DataFrame(summary_data))
 
-        df['NCBI Search'] = df['NCBI Search'].apply(make_clickable)
-        
-        # HTML 렌더링을 사용하여 테이블 표시
-        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-        
-        # CSV 다운로드 기능
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📊 결과 보고서(CSV) 다운로드", csv, "primer_mapping_results.csv", "text/csv")
+    # 3. 추가 안내
+    with st.expander("사용 팁"):
+        st.write("""
+        - **서열 입력**: 분석하고자 하는 프라이머나 DNA 서열을 붙여넣으세요.
+        - **NCBI 검색**: Locus ID를 입력하면 해당 ID로 NCBI의 모든 데이터베이스를 검색할 수 있는 링크가 활성화됩니다.
+        - **상대 경로**: 본 앱은 현재 실행 위치를 기준으로 데이터를 처리하므로 GitHub 배포 환경에 최적화되어 있습니다.
+        """)
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
     st.info("CDS 파일을 업로드하여 최적의 siRNA 후보군을 탐색합니다.")
