@@ -169,7 +169,7 @@ with tab1:
         if query_seq:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             # 새로 만든 DB 경로
-            db_path = os.path.join(current_dir, "pwn_fiXed_db", "pwn_final_db")
+            db_path = os.path.join(current_dir, "pwn_fiXed_db", "pwn_fixed_db")
             temp_query = os.path.join(current_dir, "temp_query.fa")
             result_csv = os.path.join(current_dir, "blast_result.csv")
 
