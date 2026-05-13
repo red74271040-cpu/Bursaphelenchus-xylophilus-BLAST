@@ -122,19 +122,30 @@ import re
 
 
 
-# 1. ID를 공통된 형식으로 정리하는 함수 정의
+
+
+# 2. 함수 정의 (호출보다 위에 있어야 함)
 def normalize_id(full_id):
-    if pd.isna(full_id):
-        return full_id
-    # 소수점 뒤의 버전 제거 (예: GAC_001.1 -> GAC_001)
-    # 혹은 공백 제거 등 필요한 전처리를 수행합니다.
+    if full_id is None or str(full_id) == 'nan':
+        return ""
+    # 데이터를 강제로 문자로 바꾸고 분리
     return str(full_id).split('.')[0].strip()
 
-# ... (기존 코드들) ...
 
-# 2. 함수 정의 후에 호출해야 에러가 나지 않습니다.
-df['Normalized ID'] = df['Locus ID'].apply(normalize_id)
 
+if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
+    # 3. CSV 읽을 때 컬럼명 명시
+    df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
+    
+    # 4. 안전하게 적용 (astype(str) 추가)
+    if 'Locus ID' in df.columns:
+        df['Normalized ID'] = df['Locus ID'].astype(str).apply(normalize_id)
+        
+        # 이름 매핑 (get_descriptions()가 사전 데이터를 반환한다고 가정)
+        names_dict = get_descriptions()
+        df['Target Function'] = df['Normalized ID'].map(lambda x: names_dict.get(x, "No Map Found"))
+        
+        st.dataframe(df[["Target Function", "Normalized ID", "Identity(%)"]])
 with tab1:
     st.header("primer를 통한 target찾기")
 
