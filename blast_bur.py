@@ -120,9 +120,14 @@ import subprocess
 import tempfile
 import re
 
+
+
 def normalize_id(full_id):
-    # .1 같은 버전 번호를 제거하거나 공통 접두사만 추출
-    return full_id.split('.')[0].strip()
+    if pd.isna(full_id):
+        return full_id
+    # 소수점 뒤의 버전 제거 (예: GAC_001.1 -> GAC_001)
+    # 혹은 공백 제거 등 필요한 전처리를 수행합니다.
+    return str(full_id).split('.')[0].strip()
 
 # 적용 시
 df['Normalized ID'] = df['Locus ID'].apply(normalize_id)
