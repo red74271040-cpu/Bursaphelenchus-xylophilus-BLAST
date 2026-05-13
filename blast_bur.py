@@ -142,81 +142,66 @@ def get_clean_id(header):
     return header.split()[0].lstrip('>').split('|')[-1]
 
 with tab1:
-    st.header("🔍 프라이머 타겟 정밀 분석 (Ranked)")
-    st.markdown("입력한 프라이머 서열과 일치하는 유전자를 E-value와 정확도 순으로 나열합니다.")
+    st.header("🔬 재선충 RNAi 전용 고속 분석기")
 
-    # 1. 서열 입력
-    query_seq = st.text_input("프라이머 또는 siRNA 서열 입력", key="primer_input").upper().strip()
+    # [1. 이름표 로드: 이제 ID가 100% 일치하므로 정규식 필요 없음]
+    @st.cache_data
+    def get_descriptions():
+        desc_dict = {}
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        target_path = os.path.join(current_dir, "pwn_pro_named.fa")
+        
+        if os.path.exists(target_path):
+            from Bio import SeqIO
+            for record in SeqIO.parse(target_path, "fasta"):
+                full_desc = record.description
+                # ">ID 이름" 형태에서 이름만 추출
+                parts = full_desc.split(" ", 1)
+                name = parts[1] if len(parts) > 1 else "Hypothetical Protein"
+                desc_dict[str(record.id)] = name
+        return desc_dict
 
-    if st.button("타겟 후보 분석 실행", use_container_width=True):
+    # [2. UI 섹션]
+    query_seq = st.text_area("프라이머 서열 입력", height=100, 
+                             placeholder="예: GCTTCACAGCAGTGCCAAG", key="final_system")
+
+    if st.button("타겟 유전자 분석 실행", use_container_width=True):
         if query_seq:
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            # 파일 경로 설정 (GitHub 배포 시 경로 확인 필수)
-            cds_fasta = os.path.join(current_dir, "cds_from_genomic_bur.fna")
-            pro_fasta = os.path.join(current_dir, "pwn_pro_named.fa")
-            db_path = os.path.join(current_dir, "pwn_db", "pwn_db") # makeblastdb로 생성된 경로
-            
-            # 2. 이름표 데이터 미리 로딩 (ID 기반 매핑)
-            anno_map = {}
-            if os.path.exists(pro_fasta):
-                with open(pro_fasta, "r", encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        if line.startswith(">"):
-                            header = line.strip()
-                            cid = get_clean_id(header)
-                            desc = header.split(None, 1)[1] if " " in header else "Unnamed Product"
-                            anno_map[cid] = desc
+            # 새로 만든 DB 경로
+            db_path = os.path.join(current_dir, "pwn_final_db", "pwn_final_db")
+            temp_query = os.path.join(current_dir, "temp_query.fa")
+            result_csv = os.path.join(current_dir, "blast_result.csv")
 
-            # 3. BLAST 실행을 위한 임시 쿼리 생성
-            with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.fa') as tmp:
-                tmp.write(f">Query\n{query_seq}")
-                tmp_path = tmp.name
+            with st.spinner("재선충 전용 DB 검색 중..."):
+                with open(temp_query, "w") as f:
+                    f.write(f">Query\n{query_seq}")
 
-            try:
-                # 4. BLAST 실행 (Short sequence 옵션)
-                result = subprocess.run([
-                    "blastn", "-query", tmp_path, "-db", db_path,
-                    "-outfmt", "6 sseqid pident length mismatch evalue bitscore",
-                    "-task", "blastn-short", "-evalue", "1000"
-                ], capture_output=True, text=True)
+                import subprocess
+                import pandas as pd
+                
+                # BLAST 실행
+                subprocess.run(["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
+                               "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                               "-task", "blastn-short", "-evalue", "1000"])
 
-                if result.stdout:
-                    # 결과 가공
-                    data = [line.split('\t') for line in result.stdout.strip().split('\n')]
-                    df = pd.DataFrame(data, columns=["Subject_ID", "Identity(%)", "Length", "Mismatch", "E-value", "BitScore"])
+                if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
+                    df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
                     
-                    # 데이터 타입 변환
-                    df["Identity(%)"] = df["Identity(%)"].astype(float)
-                    df["E-value"] = df["E-value"].astype(float)
-                    df["BitScore"] = df["BitScore"].astype(float)
-
-                    # 5. 이름표 매칭 (GAC 등 겹치는 ID 패턴 활용)
-                    def map_name(sid):
-                        clean_sid = get_clean_id(sid)
-                        return anno_map.get(clean_sid, "Description Not Found")
-
-                    df["Gene_Product"] = df["Subject_ID"].apply(map_name)
-
-                    # 6. 순위 산정 (E-value 오름차순, BitScore 내림차순)
-                    df = df.sort_values(by=["E-value", "BitScore"], ascending=[True, False]).reset_index(drop=True)
-                    df.index = df.index + 1 # 순위를 1부터 표시
-                    df.index.name = "Rank"
-
-                    st.success(f"✅ 분석 완료! {len(df)}개의 타겟 후보를 발견했습니다.")
+                    names = get_descriptions()
                     
-                    # 결과 표시
-                    display_cols = ["Gene_Product", "Subject_ID", "Identity(%)", "E-value", "BitScore"]
-                    st.dataframe(df[display_cols], use_container_width=True)
+                    # [매핑] 이제 1:1로 완벽하게 매칭됩니다!
+                    df['Target Function'] = df['Locus ID'].apply(lambda x: names.get(str(x), "No Map Found"))
+                    df['NCBI Link'] = df['Locus ID'].apply(lambda x: f"https://www.ncbi.nlm.nih.gov/search/all/?term={x}")
 
+                    st.success(f"✅ 분석 완료! 타겟 유전자를 확인하세요.")
+                    st.dataframe(
+                        df[["Target Function", "Locus ID", "NCBI Link", "Identity(%)", "E-value"]],
+                        column_config={"NCBI Link": st.column_config.LinkColumn("NCBI", display_text="Search 🔗")},
+                        use_container_width=True, hide_index=True
+                    )
                 else:
-                    st.warning("⚠️ 일치하는 타겟을 찾지 못했습니다. 서열을 확인하거나 E-value 절단값을 조정하세요.")
-
-            except Exception as e:
-                st.error(f"오류 발생: {e}")
-            finally:
-                if os.path.exists(tmp_path): os.remove(tmp_path)
-        else:
-            st.error("서열을 입력해주세요.")
+                    st.error("매칭되는 유전자가 없습니다. 서열을 확인해 주세요.")
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
     st.info("CDS 파일을 업로드하여 최적의 siRNA 후보군을 탐색합니다.")
