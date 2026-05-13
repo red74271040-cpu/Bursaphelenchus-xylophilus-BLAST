@@ -122,6 +122,7 @@ import re
 
 
 
+# 1. ID를 공통된 형식으로 정리하는 함수 정의
 def normalize_id(full_id):
     if pd.isna(full_id):
         return full_id
@@ -129,9 +130,10 @@ def normalize_id(full_id):
     # 혹은 공백 제거 등 필요한 전처리를 수행합니다.
     return str(full_id).split('.')[0].strip()
 
-# 적용 시
+# ... (기존 코드들) ...
+
+# 2. 함수 정의 후에 호출해야 에러가 나지 않습니다.
 df['Normalized ID'] = df['Locus ID'].apply(normalize_id)
-df['Protein Product'] = df['Normalized ID'].map(lambda x: prot_names.get(x, "Unknown"))
 
 with tab1:
     st.header("primer를 통한 target찾기")
