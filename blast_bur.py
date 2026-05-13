@@ -142,7 +142,7 @@ def get_clean_id(header):
     return header.split()[0].lstrip('>').split('|')[-1]
 
 with tab1:
-    st.header("🔬 재선충 RNAi 전용 고속 분석기")
+    st.header("primer를 통한 target찾기")
 
     # [1. 이름표 로드: 이제 ID가 100% 일치하므로 정규식 필요 없음]
     @st.cache_data
@@ -194,7 +194,7 @@ with tab1:
                     df['Target Function'] = df['Locus ID'].apply(lambda x: names.get(str(x), "No Map Found"))
                     df['NCBI Link'] = df['Locus ID'].apply(lambda x: f"https://www.ncbi.nlm.nih.gov/search/all/?term={x}")
 
-                    st.success(f"✅ 분석 완료! 타겟 유전자를 확인하세요.")
+                    st.success(f"분석 완료! 타겟 유전자를 확인하세요.")
                     st.dataframe(
                         df[["Target Function", "Locus ID", "NCBI Link", "Identity(%)", "E-value"]],
                         column_config={"NCBI Link": st.column_config.LinkColumn("NCBI", display_text="Search 🔗")},
