@@ -179,7 +179,7 @@ with tab1:
                 
                 # 정규화 및 매핑
                           df['Normalized ID'] = df['Locus ID'].apply(normalize_id)
-                         names_dict = get_descriptions()
+                          names_dict = get_descriptions()
                           df['Target Function'] = df['Normalized ID'].map(lambda x: names_dict.get(x, "No Map Found"))
                 
                           st.dataframe(df[["Target Function", "Locus ID", "Identity(%)", "E-value"]])
