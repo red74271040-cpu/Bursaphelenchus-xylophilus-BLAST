@@ -122,7 +122,7 @@ import re
 
 
 
-def Normalize_id(full_id):
+def normalize_id(full_id):
     if pd.isna(full_id):
         return full_id
     # 소수점 뒤의 버전 제거 (예: GAC_001.1 -> GAC_001)
