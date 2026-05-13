@@ -161,7 +161,7 @@ with tab1:
                 if pd.isna(full_id): return ""
                 return str(full_id).split('.')[0].strip()
 
-          \if st.button("타겟 유전자 분석 실행"):
+            if st.button("타겟 유전자 분석 실행"):
               if query_seq:
                   with st.spinner("분석 중..."):
             # 1. 쿼리 파일 생성
