@@ -125,54 +125,98 @@ import pandas as pd
 import urllib.parse
 import os
 
+import streamlit as st
+import pandas as pd
+import subprocess
+import os
+import tempfile
+import re
+
+def get_clean_id(header):
+    """헤더에서 숫자와 문자가 조합된 핵심 ID 추출 (예: BXY_1538900 또는 BXYJ_LOCUS1)"""
+    # 숫자 부분만 추출하거나 특정 패턴(BXY)을 찾음
+    match = re.search(r'(BXYJ?_LOCUS\d+|BXY_\d+)', header)
+    if match:
+        return match.group()
+    # 패턴이 없을 경우 첫 단어 반환
+    return header.split()[0].lstrip('>').split('|')[-1]
+
 with tab1:
-    st.header("🔍 빠른 서열 분석 및 NCBI 검색")
-    st.info("서열을 입력하고 Locus ID를 통해 단백질 정보를 NCBI에서 즉시 확인하세요.")
+    st.header("🔍 프라이머 타겟 정밀 분석 (Ranked)")
+    st.markdown("입력한 프라이머 서열과 일치하는 유전자를 E-value와 정확도 순으로 나열합니다.")
 
-    # 1. 입력 섹션
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        # 분석할 서열 입력 (프라이머나 특정 서열)
-        input_seq = st.text_area("분석할 서열(Sequence) 입력", placeholder="ATGC...", height=100)
-    
-    with col2:
-        # 검색할 Locus ID 입력 (예: BXYJ_LOCUS1)
-        locus_id = st.text_input("Locus ID 입력", placeholder="예: BXYJ_LOCUS1")
-        
-        # NCBI 검색 버튼 생성
-        if locus_id:
-            encoded_locus = urllib.parse.quote(locus_id.strip())
-            ncbi_link = f"https://www.ncbi.nlm.nih.gov/search/all/?term={encoded_locus}"
-            st.markdown(f'<a href="{ncbi_link}" target="_blank"><button style="width:100%; cursor:pointer;">🌐 NCBI에서 ID 검색</button></a>', unsafe_allow_html=True)
+    # 1. 서열 입력
+    query_seq = st.text_input("프라이머 또는 siRNA 서열 입력", key="primer_input").upper().strip()
 
-    # 2. 결과 정리 (입력값이 있을 때만 표시)
-    if input_seq or locus_id:
-        st.markdown("---")
-        st.subheader("📋 입력 정보 요약")
-        
-        # 상대 경로를 활용한 현재 작업 환경 확인
-        current_work_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        summary_data = {
-            "항목": ["입력 서열", "Locus ID", "서열 길이", "작업 경로(상대)"],
-            "내용": [
-                input_seq[:50] + "..." if len(input_seq) > 50 else input_seq,
-                locus_id if locus_id else "미입력",
-                f"{len(input_seq)} bp",
-                f"./{os.path.basename(current_work_dir)}"
-            ]
-        }
-        
-        st.table(pd.DataFrame(summary_data))
+    if st.button("타겟 후보 분석 실행", use_container_width=True):
+        if query_seq:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # 파일 경로 설정 (GitHub 배포 시 경로 확인 필수)
+            cds_fasta = os.path.join(current_dir, "cds_from_genomic_bur.fna")
+            pro_fasta = os.path.join(current_dir, "pwn_pro_named.fa")
+            db_path = os.path.join(current_dir, "pwn_db", "pwn_db") # makeblastdb로 생성된 경로
+            
+            # 2. 이름표 데이터 미리 로딩 (ID 기반 매핑)
+            anno_map = {}
+            if os.path.exists(pro_fasta):
+                with open(pro_fasta, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        if line.startswith(">"):
+                            header = line.strip()
+                            cid = get_clean_id(header)
+                            desc = header.split(None, 1)[1] if " " in header else "Unnamed Product"
+                            anno_map[cid] = desc
 
-    # 3. 추가 안내
-    with st.expander("사용 팁"):
-        st.write("""
-        - **서열 입력**: 분석하고자 하는 프라이머나 DNA 서열을 붙여넣으세요.
-        - **NCBI 검색**: Locus ID를 입력하면 해당 ID로 NCBI의 모든 데이터베이스를 검색할 수 있는 링크가 활성화됩니다.
-        - **상대 경로**: 본 앱은 현재 실행 위치를 기준으로 데이터를 처리하므로 GitHub 배포 환경에 최적화되어 있습니다.
-        """)
+            # 3. BLAST 실행을 위한 임시 쿼리 생성
+            with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.fa') as tmp:
+                tmp.write(f">Query\n{query_seq}")
+                tmp_path = tmp.name
+
+            try:
+                # 4. BLAST 실행 (Short sequence 옵션)
+                result = subprocess.run([
+                    "blastn", "-query", tmp_path, "-db", db_path,
+                    "-outfmt", "6 sseqid pident length mismatch evalue bitscore",
+                    "-task", "blastn-short", "-evalue", "1000"
+                ], capture_output=True, text=True)
+
+                if result.stdout:
+                    # 결과 가공
+                    data = [line.split('\t') for line in result.stdout.strip().split('\n')]
+                    df = pd.DataFrame(data, columns=["Subject_ID", "Identity(%)", "Length", "Mismatch", "E-value", "BitScore"])
+                    
+                    # 데이터 타입 변환
+                    df["Identity(%)"] = df["Identity(%)"].astype(float)
+                    df["E-value"] = df["E-value"].astype(float)
+                    df["BitScore"] = df["BitScore"].astype(float)
+
+                    # 5. 이름표 매칭 (GAC 등 겹치는 ID 패턴 활용)
+                    def map_name(sid):
+                        clean_sid = get_clean_id(sid)
+                        return anno_map.get(clean_sid, "Description Not Found")
+
+                    df["Gene_Product"] = df["Subject_ID"].apply(map_name)
+
+                    # 6. 순위 산정 (E-value 오름차순, BitScore 내림차순)
+                    df = df.sort_values(by=["E-value", "BitScore"], ascending=[True, False]).reset_index(drop=True)
+                    df.index = df.index + 1 # 순위를 1부터 표시
+                    df.index.name = "Rank"
+
+                    st.success(f"✅ 분석 완료! {len(df)}개의 타겟 후보를 발견했습니다.")
+                    
+                    # 결과 표시
+                    display_cols = ["Gene_Product", "Subject_ID", "Identity(%)", "E-value", "BitScore"]
+                    st.dataframe(df[display_cols], use_container_width=True)
+
+                else:
+                    st.warning("⚠️ 일치하는 타겟을 찾지 못했습니다. 서열을 확인하거나 E-value 절단값을 조정하세요.")
+
+            except Exception as e:
+                st.error(f"오류 발생: {e}")
+            finally:
+                if os.path.exists(tmp_path): os.remove(tmp_path)
+        else:
+            st.error("서열을 입력해주세요.")
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
     st.info("CDS 파일을 업로드하여 최적의 siRNA 후보군을 탐색합니다.")
