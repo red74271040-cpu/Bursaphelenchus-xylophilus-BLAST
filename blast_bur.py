@@ -126,65 +126,316 @@ import re
 
 
 with tab1:
-    st.header("primer를 통한 target찾기")
+    st.header("🔬 프라이머 기반 타겟 유전자 분석")
 
-    # [1. 이름표 로드: 이제 ID가 100% 일치하므로 정규식 필요 없음]
+    # ──────────────────────────────────────────────
+    # 헬퍼 함수들
+    # ──────────────────────────────────────────────
+
     @st.cache_data
-    def get_descriptions():
-        desc_dict = {}
+    def build_id_mapping_table():
+        """CDS FASTA + Protein FASTA → {BXY_XXXXXXX : 단백질이름} 딕셔너리"""
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        target_path = os.path.join(current_dir, "pwn_pro_named.fa")
-        
-        if os.path.exists(target_path):
-            from Bio import SeqIO
-            for record in SeqIO.parse(target_path, "fasta"):
-                full_desc = record.description
-                # ">ID 이름" 형태에서 이름만 추출
-                parts = full_desc.split(" ", 1)
-                name = parts[1] if len(parts) > 1 else "Hypothetical Protein"
-                desc_dict[str(record.id)] = name
-        return desc_dict
+        cds_path     = os.path.join(current_dir, "pwn_cds.fa")          # ← 실제 CDS 파일명으로 수정
+        protein_path = os.path.join(current_dir, "pwn_pro_named.fa")    # ← 실제 Protein 파일명으로 수정
 
-    # [2. UI 섹션]
-    query_seq = st.text_area("프라이머 서열 입력", height=100, 
-                             placeholder="예: GCTTCACAGCAGTGCCAAG", key="final_system")
+        prot_name_dict = {}
+        if os.path.exists(protein_path):
+            for record in SeqIO.parse(protein_path, "fasta"):
+                prot_id = str(record.id)                                  # ex) BXY_0416800.1
+                parts   = record.description.split(" ", 1)
+                name    = parts[1].strip() if len(parts) > 1 else "Hypothetical Protein"
+                prot_name_dict[prot_id]               = name             # BXY_0416800.1
+                prot_name_dict[prot_id.split(".")[0]] = name             # BXY_0416800
 
-    if st.button("타겟 유전자 분석 실행", use_container_width=True):
-        if query_seq:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            # 새로 만든 DB 경로
-            db_path = os.path.join(current_dir, "pwn_fiXed_db", "pwn_fixed_db")
-            temp_query = os.path.join(current_dir, "temp_query.fa")
-            result_csv = os.path.join(current_dir, "blast_result.csv")
+        cds_to_prot = {}
+        if os.path.exists(cds_path):
+            for record in SeqIO.parse(cds_path, "fasta"):
+                cds_id  = str(record.id)
+                base_id = cds_id.split(".")[0]
+                name = (prot_name_dict.get(cds_id) or
+                        prot_name_dict.get(base_id) or
+                        "Hypothetical Protein")
+                cds_to_prot[cds_id]  = name
+                cds_to_prot[base_id] = name
+        return cds_to_prot
 
-            def normalize_id(full_id):
-                if pd.isna(full_id): return ""
-                return str(full_id).split('.')[0].strip()
+    @st.cache_resource
+    def ensure_blast_db():
+        """최초 실행 시 BLAST DB 자동 생성"""
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path  = os.path.join(current_dir, "pwn_blast_db", "pwn_blast_db")
+        cds_path = os.path.join(current_dir, "pwn_cds.fa")
 
-            if st.button("타겟 유전자 분석 실행"):
-              if query_seq:
-                  with st.spinner("분석 중..."):
-            # 1. 쿼리 파일 생성
-                      with open(temp_query, "w") as f:
-                          f.write(f">Query\n{query_seq}")
-            
-            # 2. BLAST 실행
-                      subprocess.run(["blastn", "-query", temp_query, "-db", db_path, "-out", result_csv,
-                            "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                            "-task", "blastn-short", "-evalue", "1000"])
+        if not os.path.exists(db_path + ".nhr"):
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            subprocess.run([
+                "makeblastdb", "-in", cds_path,
+                "-dbtype", "nucl", "-out", db_path
+            ], check=True)
+        return db_path
 
-            # 3. 결과 처리 (이 로직은 반드시 버튼 안쪽에 있어야 안전합니다)
-                      if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
-                          df = pd.read_csv(result_csv, names=["Query", "Locus ID", "Identity(%)", "Length", "Mismatch", "Gaps", "Q_Start", "Q_End", "S_Start", "S_End", "E-value", "BitScore"])
-                
-                # 정규화 및 매핑
-                          df['Normalized ID'] = df['Locus ID'].apply(normalize_id)
-                          names_dict = get_descriptions()
-                          df['Target Function'] = df['Normalized ID'].map(lambda x: names_dict.get(x, "No Map Found"))
-                
-                          st.dataframe(df[["Target Function", "Locus ID", "Identity(%)", "E-value"]])
-                      else:
-                          st.error("결과가 없습니다.")
+    def get_protein_name(locus_id, mapping):
+        raw  = str(locus_id).strip()
+        base = raw.split(".")[0]
+        return mapping.get(raw) or mapping.get(base) or "No Match Found"
+
+    # ──────────────────────────────────────────────
+    # 섹션 1 : 프라이머 BLAST 분석
+    # ──────────────────────────────────────────────
+    st.subheader("1. 프라이머 서열 입력")
+
+    query_seq = st.text_area(
+        "프라이머 서열을 입력하세요 (ATGC...)",
+        height=100,
+        placeholder="예: GCTTCACAGCAGTGCCAAG",
+        key="tab1_primer_input"
+    )
+
+    run_btn = st.button("🔍 타겟 유전자 분석 실행", use_container_width=True, type="primary")
+
+    if run_btn:
+        if not query_seq.strip():
+            st.warning("프라이머 서열을 입력해 주세요.")
+        else:
+            current_dir  = os.path.dirname(os.path.abspath(__file__))
+            temp_query   = os.path.join(current_dir, "temp_query.fa")
+            result_csv   = os.path.join(current_dir, "blast_result.csv")
+
+            with st.spinner("BLAST 분석 중..."):
+                try:
+                    db_path = ensure_blast_db()
+
+                    # 쿼리 파일 저장
+                    with open(temp_query, "w") as f:
+                        f.write(f">Query\n{query_seq.strip()}")
+
+                    # BLAST 실행
+                    subprocess.run([
+                        "blastn", "-query", temp_query, "-db", db_path,
+                        "-out", result_csv,
+                        "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                        "-task", "blastn-short", "-evalue", "1000"
+                    ], check=True)
+
+                    if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
+                        df = pd.read_csv(result_csv, names=[
+                            "Query", "Locus ID", "Identity(%)", "Length",
+                            "Mismatch", "Gaps", "Q_Start", "Q_End",
+                            "S_Start", "S_End", "E-value", "BitScore"
+                        ])
+
+                        mapping = build_id_mapping_table()
+                        df["Protein Name"] = df["Locus ID"].apply(
+                            lambda x: get_protein_name(x, mapping)
+                        )
+
+                        # E-value 오름차순 정렬 (후보군 순위)
+                        df_sorted = df.sort_values("E-value").reset_index(drop=True)
+                        df_sorted.index += 1
+
+                        # session_state 저장 (NCBI 조회 섹션에서 재사용)
+                        st.session_state["blast_df"]     = df_sorted
+                        st.session_state["blast_done"]   = True
+
+                    else:
+                        st.error("BLAST 결과가 없습니다. 서열을 확인해 주세요.")
+                        st.session_state["blast_done"] = False
+
+                except Exception as e:
+                    st.error(f"분석 중 오류 발생: {e}")
+                    st.session_state["blast_done"] = False
+
+    # ──────────────────────────────────────────────
+    # 섹션 2 : BLAST 결과 테이블
+    # ──────────────────────────────────────────────
+    if st.session_state.get("blast_done"):
+        df_sorted = st.session_state["blast_df"]
+
+        st.markdown("---")
+        st.subheader("2. 분석 결과 — 후보 유전자 목록")
+        st.caption(f"총 {len(df_sorted)}개 결과 | E-value 오름차순 정렬 (상위 = 높은 유사도)")
+
+        st.dataframe(
+            df_sorted[["Protein Name", "Locus ID", "Identity(%)", "E-value", "BitScore"]],
+            use_container_width=True,
+            height=min(400, 40 + len(df_sorted) * 35)
+        )
+
+        # 결과 CSV 다운로드
+        csv_data = df_sorted[["Protein Name","Locus ID","Identity(%)","E-value","BitScore"]].to_csv(index=True)
+        st.download_button(
+            "📥 결과 CSV 다운로드",
+            data=csv_data,
+            file_name="blast_result_named.csv",
+            mime="text/csv"
+        )
+
+    # ──────────────────────────────────────────────
+    # 섹션 3 : NCBI 추가 정보 조회 (독립 검색 가능)
+    # ──────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("3. NCBI 추가 정보 조회")
+    st.info("BLAST 결과에서 선택하거나, Locus ID / 유전자명을 직접 입력해 조회할 수 있습니다.")
+
+    col_select, col_manual = st.columns([2, 1])
+
+    with col_select:
+        if st.session_state.get("blast_done"):
+            df_ref   = st.session_state["blast_df"]
+            # "Protein Name (Locus ID)" 형태로 옵션 표시
+            options  = [
+                f"{row['Protein Name']}  [{row['Locus ID']}]"
+                for _, row in df_ref.iterrows()
+            ]
+            selected = st.selectbox("결과에서 선택", ["— 직접 입력 —"] + options)
+            # Locus ID만 추출
+            if selected != "— 직접 입력 —":
+                import re as _re
+                match = _re.search(r'\[(.+?)\]', selected)
+                auto_id = match.group(1) if match else ""
+            else:
+                auto_id = ""
+        else:
+            st.caption("BLAST 분석 결과가 없습니다. 위에서 분석을 먼저 실행하거나 아래에 직접 입력하세요.")
+            auto_id = ""
+
+    with col_manual:
+        manual_id = st.text_input(
+            "직접 입력 (우선 적용)",
+            placeholder="예: BXY_0416800.1",
+            key="ncbi_manual_id"
+        )
+
+    # 최종 조회 ID 결정 (직접 입력 우선)
+    query_id = manual_id.strip() if manual_id.strip() else auto_id
+
+    if query_id:
+        st.caption(f"조회 대상: `{query_id}`")
+
+    # 버튼 3개
+    btn_c1, btn_c2, btn_c3 = st.columns(3)
+    with btn_c1:
+        gene_btn  = st.button("📄 NCBI Gene 정보",       use_container_width=True)
+    with btn_c2:
+        prot_btn  = st.button("🧬 Protein 서열 조회",    use_container_width=True)
+    with btn_c3:
+        link_btn  = st.button("🌐 NCBI 관련 링크 열기",  use_container_width=True)
+
+    # --- NCBI Gene 조회 ---
+    if gene_btn:
+        if not query_id:
+            st.warning("조회할 ID를 선택하거나 입력해 주세요.")
+        else:
+            with st.spinner(f"{query_id} — NCBI Gene 조회 중..."):
+                try:
+                    import time
+                    handle = Entrez.esearch(
+                        db="gene",
+                        term=f"{query_id}[Gene Name] AND Bursaphelenchus xylophilus[Organism]"
+                    )
+                    record = Entrez.read(handle); handle.close()
+                    time.sleep(0.4)
+
+                    if record["IdList"]:
+                        gene_ncbi_id = record["IdList"][0]
+                        fh = Entrez.efetch(db="gene", id=gene_ncbi_id,
+                                           rettype="gene_table", retmode="text")
+                        gene_info = fh.read(); fh.close()
+
+                        st.success(f"NCBI Gene ID: {gene_ncbi_id}")
+                        with st.expander("Gene 상세 정보", expanded=True):
+                            st.text(gene_info[:3000])
+                        st.markdown(
+                            f"🔗 [NCBI Gene 페이지 바로가기]"
+                            f"(https://www.ncbi.nlm.nih.gov/gene/{gene_ncbi_id})"
+                        )
+                    else:
+                        # Organism 조건 없이 재시도
+                        handle2 = Entrez.esearch(db="gene", term=query_id)
+                        record2 = Entrez.read(handle2); handle2.close()
+                        if record2["IdList"]:
+                            gene_ncbi_id = record2["IdList"][0]
+                            st.info(f"종 조건 없이 검색된 Gene ID: {gene_ncbi_id}")
+                            st.markdown(
+                                f"🔗 [NCBI Gene 바로가기]"
+                                f"(https://www.ncbi.nlm.nih.gov/gene/{gene_ncbi_id})"
+                            )
+                        else:
+                            st.warning("NCBI Gene에서 해당 ID를 찾지 못했습니다.")
+                except Exception as e:
+                    st.error(f"Gene 조회 실패: {e}")
+
+    # --- Protein 서열 조회 ---
+    if prot_btn:
+        if not query_id:
+            st.warning("조회할 ID를 선택하거나 입력해 주세요.")
+        else:
+            with st.spinner(f"{query_id} — Protein 서열 조회 중..."):
+                try:
+                    import time
+                    handle = Entrez.esearch(
+                        db="protein",
+                        term=f"{query_id} Bursaphelenchus xylophilus"
+                    )
+                    record = Entrez.read(handle); handle.close()
+                    time.sleep(0.4)
+
+                    if record["IdList"]:
+                        prot_ncbi_id = record["IdList"][0]
+                        fh = Entrez.efetch(db="protein", id=prot_ncbi_id,
+                                           rettype="fasta", retmode="text")
+                        prot_fasta = fh.read(); fh.close()
+
+                        st.success("단백질 서열 조회 완료!")
+
+                        # 서열 요약 정보
+                        lines = prot_fasta.strip().split("\n")
+                        header = lines[0] if lines else ""
+                        seq    = "".join(lines[1:])
+                        st.caption(f"헤더: {header} | 길이: {len(seq)} aa")
+
+                        with st.expander("FASTA 서열 보기", expanded=True):
+                            st.code(prot_fasta, language="text")
+
+                        st.download_button(
+                            "📥 FASTA 다운로드",
+                            data=prot_fasta,
+                            file_name=f"{query_id}_protein.fasta",
+                            mime="text/plain"
+                        )
+                    else:
+                        st.warning("단백질 서열을 찾지 못했습니다.")
+                except Exception as e:
+                    st.error(f"Protein 조회 실패: {e}")
+
+    # --- NCBI 링크 모음 ---
+    if link_btn:
+        if not query_id:
+            st.warning("조회할 ID를 선택하거나 입력해 주세요.")
+        else:
+            import urllib.parse
+            encoded = urllib.parse.quote(f"{query_id} Bursaphelenchus xylophilus")
+            plain   = urllib.parse.quote(query_id)
+
+            st.markdown("#### 관련 NCBI 페이지")
+            lc1, lc2, lc3, lc4 = st.columns(4)
+            with lc1:
+                st.markdown(
+                    f"[🧬 Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/?term={encoded})"
+                )
+            with lc2:
+                st.markdown(
+                    f"[🔬 Protein](https://www.ncbi.nlm.nih.gov/protein/?term={encoded})"
+                )
+            with lc3:
+                st.markdown(
+                    f"[📚 PubMed](https://pubmed.ncbi.nlm.nih.gov/?term={encoded})"
+                )
+            with lc4:
+                st.markdown(
+                    f"[🗄 Gene](https://www.ncbi.nlm.nih.gov/gene/?term={plain}%5BGene+Name%5D)"
+                )
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
     st.info("CDS 파일을 업로드하여 최적의 siRNA 후보군을 탐색합니다.")
