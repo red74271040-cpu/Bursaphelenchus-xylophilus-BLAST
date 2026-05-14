@@ -286,7 +286,7 @@ with tab1:
         st.write("**새 CDS (NCBI accession 있는 파일) 샘플:**")
         for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "ncbi_cds.fa"), "fasta")):
             if i >= 3: break
-                st.code(rec.description)
+            st.code(rec.description)
         st.write("**기존 CDS (BXY ID 파일) 샘플:**")
         for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_cds.fa"), "fasta")):
             if i >= 3: break
