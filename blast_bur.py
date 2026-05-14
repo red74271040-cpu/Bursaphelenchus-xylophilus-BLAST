@@ -298,7 +298,6 @@ with tab1:
     
     
 
-    
     with col_select:
         if st.session_state.get("blast_done"):
             df_ref  = st.session_state["blast_df"]
