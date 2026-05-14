@@ -281,7 +281,7 @@ with tab1:
     # ──────────────────────────────────────────────
     # 섹션 3 : NCBI 추가 정보 조회
     # ──────────────────────────────────────────────
-   with col_select:
+    with col_select:
         if st.session_state.get("blast_done"):
             df_ref  = st.session_state["blast_df"]
             options = ["— 직접 입력 —"] + [
