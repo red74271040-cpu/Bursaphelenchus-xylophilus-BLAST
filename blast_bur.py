@@ -129,7 +129,7 @@ import re
 with tab1:
     with st.expander("🔧 NCBI 전체 디버그", expanded=True):
         import time
-        apping = build_id_mapping_table()
+        mapping = build_id_mapping_table()
         test_bxy = "BXY_0416800.1"
         prot_name = get_protein_name(test_bxy, mapping)
         st.write(f"BXY ID: `{test_bxy}`")
