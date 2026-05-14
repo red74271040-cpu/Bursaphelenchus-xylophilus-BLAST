@@ -127,6 +127,21 @@ import re
 
 
 with tab1:
+    with st.expander("🔧 locus_tag 매핑 확인", expanded=True):
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    st.write("**새 CDS 파일 locus_tag 샘플 (첫 5개):**")
+    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "cds_from_genomic_bur.fna"), "fasta")):
+        if i >= 5: break
+        # locus_tag와 protein_id만 추출
+        locus = re.search(r'\[locus_tag=([^\]]+)\]', rec.description)
+        prot  = re.search(r'\[protein_id=([^\]]+)\]', rec.description)
+        st.write(f"locus_tag: `{locus.group(1) if locus else 'None'}` | protein_id: `{prot.group(1) if prot else 'None'}`")
+    
+    st.write("**기존 CDS 파일 ID 샘플 (첫 5개):**")
+    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_cds.fa"), "fasta")):
+        if i >= 5: break
+        st.write(f"ID: `{rec.id}` | gene: `{rec.description}`")
     st.header("프라이머 기반 타겟 유전자 분석")
 
     # ──────────────────────────────────────────────
@@ -280,22 +295,11 @@ with tab1:
     # ──────────────────────────────────────────────
     # 섹션 3 : NCBI 추가 정보 조회
     # ──────────────────────────────────────────────
-    with st.expander("🔧 파일 목록 확인", expanded=True):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        files = os.listdir(current_dir)
-        st.write(files)
 
-    with st.expander("🔧 새 CDS 파일 헤더 확인", expanded=True):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        st.write("cds_from_genomic_bur.fna")
-        for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "ncbi_cds.fa"), "fasta")):
-            if i >= 3: break
-            st.code(rec.description)
-        st.write("pwn_cds.fa")
-        for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_cds.fa"), "fasta")):
-            if i >= 3: break
-            st.code(rec.description)
+    
+    
 
+    
     with col_select:
         if st.session_state.get("blast_done"):
             df_ref  = st.session_state["blast_df"]
