@@ -281,8 +281,8 @@ with tab1:
     # ──────────────────────────────────────────────
     # 섹션 3 : NCBI 추가 정보 조회
     # ──────────────────────────────────────────────
-    with col_select:
-       if st.session_state.get("blast_done"):
+   with col_select:
+        if st.session_state.get("blast_done"):
             df_ref  = st.session_state["blast_df"]
             options = ["— 직접 입력 —"] + [
                 f"{row['Protein Name']}  [{row['Locus ID']}]"
@@ -294,9 +294,9 @@ with tab1:
                 auto_id = match.group(1) if match else ""
             else:
                 auto_id = ""
-            else:
-                st.caption("위에서 BLAST 분석을 먼저 실행하거나 아래에 직접 입력하세요.")
-                auto_id = ""
+        else:
+            st.caption("위에서 BLAST 분석을 먼저 실행하거나 아래에 직접 입력하세요.")
+            auto_id = ""
 
     with col_manual:
         manual_id = st.text_input(
@@ -320,7 +320,6 @@ with tab1:
         link_btn = st.button("🌐 NCBI 관련 링크",       use_container_width=True)
 
 
-    # ── Nucleotide 정보 조회 ──────────────────────
     # ── Nucleotide 정보 조회 ──────────────────────
     if gene_btn:
         if not query_id:
