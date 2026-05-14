@@ -138,7 +138,7 @@ with tab1:
     st.write(f"locus_tag: `{locus.group(1) if locus else 'None'}` | protein_id: `{prot.group(1) if prot else 'None'}`")
     
     st.write("**기존 CDS 파일 ID 샘플 (첫 5개):**")
-    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_cds.fa"), "fasta")):
+    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_blast_db"), "fasta")):
         if i >= 5: break
         st.write(f"ID: `{rec.id}` | gene: `{rec.description}`")
     st.header("프라이머 기반 타겟 유전자 분석")
