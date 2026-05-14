@@ -284,9 +284,15 @@ with tab1:
     # ──────────────────────────────────────────────
     # 섹션 3: NCBI 추가 정보 조회
     # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────
+    # 섹션 3: WormBase ParaSite 추가 정보 조회
+    # ──────────────────────────────────────────────
     st.markdown("---")
-    st.subheader("3. NCBI 추가 정보 조회")
+    st.subheader("3. WormBase ParaSite 추가 정보 조회")
     st.info("BLAST 결과에서 선택하거나 Locus ID를 직접 입력하세요.")
+
+    WBPS_SERVER  = "https://parasite.wormbase.org"
+    WBPS_SPECIES = "bursaphelenchus_xylophilus_prjeb64437"  # ← 파일 출처에 맞게 확인 필요
 
     col_select, col_manual = st.columns([2, 1])
 
@@ -311,185 +317,193 @@ with tab1:
         manual_id = st.text_input(
             "직접 입력 (우선 적용)",
             placeholder="예: BXY_0416800.1",
-            key="ncbi_manual_id"
+            key="wbps_manual_id"
         )
 
     query_id = manual_id.strip() if manual_id.strip() else auto_id
+    # 버전 번호 제거 (BXY_0416800.1 → BXY_0416800)
+    base_id  = query_id.split(".")[0] if query_id else ""
 
     if query_id:
-        st.caption(f"조회 대상: `{query_id}`")
+        st.caption(f"조회 대상: `{query_id}` (사용 ID: `{base_id}`)")
 
     btn_c1, btn_c2, btn_c3 = st.columns(3)
     with btn_c1:
-        gene_btn = st.button("📄 Nucleotide 정보 조회", use_container_width=True)
+        gene_btn = st.button("📄 유전자 기본 정보",    use_container_width=True)
     with btn_c2:
-        prot_btn = st.button("🧬 Protein 서열 조회",    use_container_width=True)
+        seq_btn  = st.button("🧬 단백질 서열 조회",    use_container_width=True)
     with btn_c3:
-        link_btn = st.button("🌐 NCBI 관련 링크",       use_container_width=True)
+        link_btn = st.button("🌐 WormBase 페이지 열기", use_container_width=True)
 
-    # ── Nucleotide 정보 조회 ──────────────────────
+    # ── 유전자 기본 정보 조회 ─────────────────────
     if gene_btn:
-        if not query_id:
+        if not base_id:
             st.warning("조회할 ID를 선택하거나 입력해 주세요.")
         else:
-            import time
-            mapping    = build_id_mapping_table()
-            prot_name  = get_protein_name(query_id, mapping)
-            clean_name = prot_name.replace("...", "").replace("%0A", "").strip()
-
-            if not clean_name or clean_name == "Hypothetical Protein":
-                search_term = "Bursaphelenchus xylophilus[Organism]"
-            else:
-                search_term = f"{clean_name} AND Bursaphelenchus xylophilus[Organism]"
-
-            st.info(f"검색어: `{search_term}`")
-
-            with st.spinner("NCBI Nucleotide 검색 중..."):
+            with st.spinner(f"{base_id} 조회 중..."):
                 try:
-                    h = Entrez.esearch(db="protein", term=search_term, retmax=5)
-                    r = Entrez.read(h)
-                    h.close()
-                    time.sleep(0.4)
+                    # 1. Gene lookup
+                    url = f"{WBPS_SERVER}/rest/lookup/id/{base_id}"
+                    r   = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
 
-                    if r["IdList"]:
-                        st.success(f"{len(r['IdList'])}개 결과 발견")
+                    if r.status_code == 200:
+                        data = r.json()
+                        st.success("유전자 정보 조회 완료!")
 
-                        for uid in r["IdList"][:3]:
-                            fh = Entrez.efetch(
-                                db="protein", id=uid,
-                                rettype="gb", retmode="text"
-                            )
-                            gb_text = fh.read()
-                            fh.close()
-                            time.sleep(0.4)
+                        col_g1, col_g2 = st.columns(2)
+                        with col_g1:
+                            st.markdown(f"**Gene ID:** `{data.get('id', '-')}`")
+                            st.markdown(f"**Display Name:** {data.get('display_name', '-')}")
+                            st.markdown(f"**Description:** {data.get('description', '-')}")
+                            st.markdown(f"**Biotype:** {data.get('biotype', '-')}")
+                        with col_g2:
+                            st.markdown(f"**Species:** {data.get('species', '-')}")
+                            st.markdown(f"**Assembly:** {data.get('assembly_name', '-')}")
+                            st.markdown(f"**Location:** {data.get('seq_region_name', '-')}:{data.get('start', '-')}-{data.get('end', '-')}")
+                            st.markdown(f"**Strand:** {'+ (forward)' if data.get('strand') == 1 else '- (reverse)'}")
 
-                            lines      = gb_text.split("\n")
-                            definition = next((l for l in lines if l.startswith("DEFINITION")), "")
-                            organism   = next((l for l in lines if "ORGANISM" in l), "")
-                            accession  = next((l for l in lines if l.startswith("ACCESSION")), "")
-                            acc_id     = accession.replace("ACCESSION", "").strip().split()[0] if accession else uid
-
-                            with st.expander(
-                                f"📄 {acc_id} — {definition.replace('DEFINITION','').strip()[:60]}",
-                                expanded=True
-                            ):
-                                col_i1, col_i2 = st.columns(2)
-                                with col_i1:
-                                    st.markdown(f"**Accession:** `{acc_id}`")
-                                    st.markdown(f"**Definition:** {definition.replace('DEFINITION','').strip()}")
-                                with col_i2:
-                                    st.markdown(f"**Organism:** {organism.replace('ORGANISM','').strip()}")
-                                    st.markdown(f"🔗 [NCBI protein](https://www.ncbi.nlm.nih.gov/protein/{acc_id})")
-
-                                st.download_button(
-                                    f"📥 GenBank 다운로드 ({acc_id})",
-                                    data=gb_text,
-                                    file_name=f"{acc_id}.gb",
-                                    mime="text/plain",
-                                    key=f"dl_gb_{uid}"
-                                )
-                    else:
-                        st.warning("NCBI에서 결과를 찾지 못했습니다.")
+                        # WormBase 페이지 직접 링크
                         st.markdown(
-                            f"[🔍 NCBI에서 직접 검색]"
-                            f"(https://www.ncbi.nlm.nih.gov/nuccore/?term="
-                            f"{urllib.parse.quote(search_term)})"
+                            f"🔗 [WormBase ParaSite 유전자 페이지]"
+                            f"(https://parasite.wormbase.org/{WBPS_SPECIES}/Gene/Summary?g={base_id})"
                         )
 
+                        with st.expander("전체 JSON 응답 보기"):
+                            st.json(data)
+
+                    elif r.status_code == 400:
+                        # ID 형식이 다를 수 있으므로 search API 시도
+                        st.warning(f"`{base_id}` 직접 조회 실패 — 검색으로 재시도합니다.")
+                        search_url = f"{WBPS_SERVER}/rest/search?q={base_id}&species={WBPS_SPECIES}&type=gene"
+                        r2 = requests.get(search_url, headers={"Content-Type": "application/json"}, timeout=10)
+
+                        if r2.status_code == 200:
+                            results = r2.json()
+                            hits    = results.get("results", [])
+                            if hits:
+                                st.info(f"검색 결과 {len(hits)}개 발견")
+                                for hit in hits[:3]:
+                                    st.markdown(f"- `{hit.get('id')}` — {hit.get('description', '-')}")
+                            else:
+                                st.error("WormBase ParaSite에서 해당 ID를 찾지 못했습니다.")
+                                st.markdown(
+                                    f"[🔍 WormBase에서 직접 검색]"
+                                    f"(https://parasite.wormbase.org/Multi/Search/Results?q={base_id})"
+                                )
+                        else:
+                            st.error("검색 실패. ID를 확인해 주세요.")
+
+                    else:
+                        st.error(f"응답 오류: {r.status_code}")
+
+                except requests.exceptions.Timeout:
+                    st.error("서버 응답 시간 초과. 잠시 후 다시 시도해 주세요.")
                 except Exception as e:
                     st.error(f"조회 실패: {e}")
 
-    # ── Protein 서열 조회 ─────────────────────────
-    if prot_btn:
-        if not query_id:
+    # ── 단백질 서열 조회 ──────────────────────────
+    if seq_btn:
+        if not base_id:
             st.warning("조회할 ID를 선택하거나 입력해 주세요.")
         else:
-            import time
-            mapping    = build_id_mapping_table()
-            prot_name  = get_protein_name(query_id, mapping)
-            clean_name = prot_name.replace("...", "").replace("%0A", "").strip()
-
-            if not clean_name or clean_name == "Hypothetical Protein":
-                search_term = "Bursaphelenchus xylophilus[Organism]"
-            else:
-                search_term = f"{clean_name} AND Bursaphelenchus xylophilus[Organism]"
-
-            st.info(f"검색어: `{search_term}`")
-
-            with st.spinner("NCBI Protein 검색 중..."):
+            with st.spinner(f"{base_id} 단백질 서열 조회 중..."):
                 try:
-                    h = Entrez.esearch(db="protein", term=search_term, retmax=5)
-                    r = Entrez.read(h)
-                    h.close()
-                    time.sleep(0.4)
+                    # protein 서열 조회
+                    url = (
+                        f"{WBPS_SERVER}/rest/sequence/id/{base_id}"
+                        f"?type=protein;object_type=gene"
+                    )
+                    r = requests.get(
+                        url,
+                        headers={"Content-Type": "text/x-fasta"},
+                        timeout=10
+                    )
 
-                    if r["IdList"]:
-                        st.success(f"{len(r['IdList'])}개 단백질 발견")
+                    if r.status_code == 200:
+                        prot_fasta = r.text
+                        lines  = prot_fasta.strip().split("\n")
+                        header = lines[0] if lines else ""
+                        seq    = "".join(lines[1:])
 
-                        fh = Entrez.efetch(
-                            db="protein",
-                            id=",".join(r["IdList"][:3]),
-                            rettype="fasta",
-                            retmode="text"
-                        )
-                        prot_fasta = fh.read()
-                        fh.close()
+                        st.success(f"단백질 서열 조회 완료! ({len(seq)} aa)")
+                        st.caption(f"헤더: {header}")
 
-                        with st.expander("단백질 FASTA 서열", expanded=True):
+                        with st.expander("FASTA 서열 보기", expanded=True):
                             st.code(prot_fasta, language="text")
 
                         st.download_button(
                             "📥 Protein FASTA 다운로드",
                             data=prot_fasta,
-                            file_name=f"{query_id}_protein.fasta",
+                            file_name=f"{base_id}_protein.fasta",
                             mime="text/plain"
                         )
 
-                        for uid in r["IdList"][:3]:
-                            st.markdown(
-                                f"🔗 [NCBI Protein {uid}]"
-                                f"(https://www.ncbi.nlm.nih.gov/protein/{uid})"
-                            )
                     else:
-                        st.warning("단백질 서열을 찾지 못했습니다.")
-                        st.markdown(
-                            f"[🔍 NCBI Protein에서 직접 검색]"
-                            f"(https://www.ncbi.nlm.nih.gov/protein/?term="
-                            f"{urllib.parse.quote(search_term)})"
+                        # transcript ID로 재시도
+                        st.warning("Gene ID로 직접 조회 실패 — transcript로 재시도합니다.")
+                        url2 = (
+                            f"{WBPS_SERVER}/rest/sequence/id/{base_id}"
+                            f"?type=protein;object_type=transcript"
                         )
+                        r2 = requests.get(
+                            url2,
+                            headers={"Content-Type": "text/x-fasta"},
+                            timeout=10
+                        )
+                        if r2.status_code == 200:
+                            st.success("서열 조회 완료!")
+                            with st.expander("FASTA 서열 보기", expanded=True):
+                                st.code(r2.text, language="text")
+                            st.download_button(
+                                "📥 Protein FASTA 다운로드",
+                                data=r2.text,
+                                file_name=f"{base_id}_protein.fasta",
+                                mime="text/plain"
+                            )
+                        else:
+                            st.error(f"서열 조회 실패 ({r2.status_code}). ID 형식을 확인해 주세요.")
+                            st.markdown(
+                                f"[🔍 WormBase에서 직접 확인]"
+                                f"(https://parasite.wormbase.org/{WBPS_SPECIES}/Gene/Summary?g={base_id})"
+                            )
 
+                except requests.exceptions.Timeout:
+                    st.error("서버 응답 시간 초과.")
                 except Exception as e:
-                    st.error(f"Protein 조회 실패: {e}")
+                    st.error(f"서열 조회 실패: {e}")
 
-    # ── NCBI 링크 모음 ────────────────────────────
+    # ── WormBase 관련 링크 ────────────────────────
     if link_btn:
-        if not query_id:
+        if not base_id:
             st.warning("조회할 ID를 선택하거나 입력해 주세요.")
         else:
-            mapping    = build_id_mapping_table()
-            prot_name  = get_protein_name(query_id, mapping)
-            clean_name = prot_name.replace("...", "").replace("%0A", "").strip()
+            mapping   = build_id_mapping_table()
+            prot_name = get_protein_name(query_id, mapping)
 
-            if clean_name and clean_name != "Hypothetical Protein":
-                search_q = f"{clean_name} Bursaphelenchus xylophilus"
-            else:
-                search_q = "Bursaphelenchus xylophilus"
-
-            encoded     = urllib.parse.quote(search_q)
-            encoded_id  = urllib.parse.quote(query_id)
-
-            st.markdown(f"**검색어:** `{search_q}`")
-            st.markdown("#### 관련 NCBI 페이지")
-
+            st.markdown("#### WormBase ParaSite 관련 페이지")
             lc1, lc2, lc3, lc4 = st.columns(4)
             with lc1:
-                st.markdown(f"[🔬 Protein](https://www.ncbi.nlm.nih.gov/protein/?term={encoded})")
+                st.markdown(
+                    f"[🧬 Gene 요약]"
+                    f"(https://parasite.wormbase.org/{WBPS_SPECIES}/Gene/Summary?g={base_id})"
+                )
             with lc2:
-                st.markdown(f"[🧬 Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/?term={urllib.parse.quote('Bursaphelenchus xylophilus[Organism]')})")
+                st.markdown(
+                    f"[🔬 단백질 정보]"
+                    f"(https://parasite.wormbase.org/{WBPS_SPECIES}/Gene/Summary?g={base_id};#protein)"
+                )
             with lc3:
-                st.markdown(f"[📚 PubMed](https://pubmed.ncbi.nlm.nih.gov/?term={encoded})")
+                st.markdown(
+                    f"[🗺 Genome Browser]"
+                    f"(https://parasite.wormbase.org/{WBPS_SPECIES}/Location/View?g={base_id})"
+                )
             with lc4:
-                st.markdown(f"[🗄 BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE_TYPE=BlastSearch&QUERY={encoded_id})")
+                st.markdown(
+                    f"[🔍 전체 검색]"
+                    f"(https://parasite.wormbase.org/Multi/Search/Results?q={base_id})"
+                )
+
+            st.caption(f"단백질 이름: {prot_name}")
                 
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
