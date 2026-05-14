@@ -346,7 +346,7 @@ with tab1:
 
             with st.spinner("NCBI Nucleotide 검색 중..."):
                 try:
-                    h = Entrez.esearch(db="nucleotide", term=search_term, retmax=5)
+                    h = Entrez.esearch(db="protein", term=search_term, retmax=5)
                     r = Entrez.read(h)
                     h.close()
                     time.sleep(0.4)
@@ -356,7 +356,7 @@ with tab1:
 
                         for uid in r["IdList"][:3]:
                             fh = Entrez.efetch(
-                                db="nucleotide", id=uid,
+                                db="protein", id=uid,
                                 rettype="gb", retmode="text"
                             )
                             gb_text = fh.read()
@@ -379,7 +379,7 @@ with tab1:
                                     st.markdown(f"**Definition:** {definition.replace('DEFINITION','').strip()}")
                                 with col_i2:
                                     st.markdown(f"**Organism:** {organism.replace('ORGANISM','').strip()}")
-                                    st.markdown(f"🔗 [NCBI Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/{acc_id})")
+                                    st.markdown(f"🔗 [NCBI protein](https://www.ncbi.nlm.nih.gov/protein/{acc_id})")
 
                                 st.download_button(
                                     f"📥 GenBank 다운로드 ({acc_id})",
@@ -483,15 +483,13 @@ with tab1:
 
             lc1, lc2, lc3, lc4 = st.columns(4)
             with lc1:
-                st.markdown(f"[🧬 Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/?term={encoded})")
-            with lc2:
                 st.markdown(f"[🔬 Protein](https://www.ncbi.nlm.nih.gov/protein/?term={encoded})")
+            with lc2:
+                st.markdown(f"[🧬 Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/?term={urllib.parse.quote('Bursaphelenchus xylophilus[Organism]')})")
             with lc3:
                 st.markdown(f"[📚 PubMed](https://pubmed.ncbi.nlm.nih.gov/?term={encoded})")
             with lc4:
-                st.markdown(
-                    f"[🗄 BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi"
-                    f"?PAGE_TYPE=BlastSearch&QUERY={encoded_id})"
+                st.markdown(f"[🗄 BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE_TYPE=BlastSearch&QUERY={encoded_id})")
                 )
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
