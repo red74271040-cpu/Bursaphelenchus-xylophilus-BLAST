@@ -282,17 +282,15 @@ with tab1:
     # ──────────────────────────────────────────────
 
     with st.expander("🔧 새 CDS 파일 헤더 확인", expanded=True):
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    st.write("**새 CDS (NCBI accession 있는 파일) 샘플:**")
-    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "ncbi_cds.fa"), "fasta")):
-        if i >= 3: break
-        st.code(rec.description)
-    
-    st.write("**기존 CDS (BXY ID 파일) 샘플:**")
-    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_cds.fa"), "fasta")):
-        if i >= 3: break
-        st.code(rec.description)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        st.write("**새 CDS (NCBI accession 있는 파일) 샘플:**")
+        for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "ncbi_cds.fa"), "fasta")):
+            if i >= 3: break
+                st.code(rec.description)
+        st.write("**기존 CDS (BXY ID 파일) 샘플:**")
+        for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_cds.fa"), "fasta")):
+            if i >= 3: break
+            st.code(rec.description)
 
     with col_select:
         if st.session_state.get("blast_done"):
