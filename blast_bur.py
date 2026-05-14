@@ -490,7 +490,7 @@ with tab1:
                 st.markdown(f"[📚 PubMed](https://pubmed.ncbi.nlm.nih.gov/?term={encoded})")
             with lc4:
                 st.markdown(f"[🗄 BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE_TYPE=BlastSearch&QUERY={encoded_id})")
-                )
+                
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
     st.info("CDS 파일을 업로드하여 최적의 siRNA 후보군을 탐색합니다.")
