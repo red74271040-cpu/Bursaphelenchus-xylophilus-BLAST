@@ -132,41 +132,38 @@ with tab1:
     # ──────────────────────────────────────────────
     # 헬퍼 함수들
     # ──────────────────────────────────────────────
-
-    @st.cache_data
-    @st.cache_data
-def build_id_mapping_table():
-    current_dir  = os.path.dirname(os.path.abspath(__file__))
-    protein_path = os.path.join(current_dir, "pwn_pro_named.fa")
-
-    mapping = {}
-    if os.path.exists(protein_path):
-        for record in SeqIO.parse(protein_path, "fasta"):
-            prot_id = str(record.id)  # ex) BXY_0416800.1
+    def build_id_mapping_table():
+        current_dir  = os.path.dirname(os.path.abspath(__file__))
+        protein_path = os.path.join(current_dir, "pwn_pro_named.fa")
+        mapping = {}
+        if os.path.exists(protein_path):
+            for record in SeqIO.parse(protein_path, "fasta"):
+                prot_id = str(record.id)  # ex) BXY_0416800.1
 
             # description = "BXY_0416800.1 BXY_0416800.1 7TM GPCR..."
             # ID가 두 번 반복되므로 두 번째 공백 이후가 실제 이름
-            desc_parts = record.description.split(" ")
+                desc_parts = record.description.split(" ")
             # desc_parts[0] = BXY_..., desc_parts[1] = BXY_... (중복), desc_parts[2:] = 이름
-            if len(desc_parts) >= 3 and desc_parts[1] == prot_id:
-                name = " ".join(desc_parts[2:]).strip()
-            elif len(desc_parts) >= 2:
-                name = " ".join(desc_parts[1:]).strip()
-            else:
-                name = "Hypothetical Protein"
+                if len(desc_parts) >= 3 and desc_parts[1] == prot_id:
+                    name = " ".join(desc_parts[2:]).strip()
+                elif len(desc_parts) >= 2:
+                    name = " ".join(desc_parts[1:]).strip()
+                else:
+                    name = "Hypothetical Protein"
 
             # %0A 개행문자 치환 (설명에 섞인 URL 인코딩 제거)
-            name = name.replace("%0A", " ").replace("%0a", " ").strip()
+                name = name.replace("%0A", " ").replace("%0a", " ").strip()
             
             # 너무 길면 자르기
-            if len(name) > 60:
-                name = name[:60] + "..."
+                if len(name) > 60:
+                    name = name[:60] + "..."
 
             # 버전 있는 ID / 버전 없는 ID 둘 다 등록
-            mapping[prot_id]               = name   # BXY_0416800.1
-            mapping[prot_id.split(".")[0]] = name   # BXY_0416800
+                mapping[prot_id]               = name   # BXY_0416800.1
+                mapping[prot_id.split(".")[0]] = name   # BXY_0416800
 
-    return mapping
+        return mapping
+
 
     @st.cache_resource
     def ensure_blast_db():
