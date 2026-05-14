@@ -277,32 +277,30 @@ with tab1:
         )
 
     # ──────────────────────────────────────────────
-    # 섹션 3 : NCBI 추가 정보 조회 (독립 검색 가능)
+    # ──────────────────────────────────────────────
+    # 섹션 3 : NCBI 추가 정보 조회
     # ──────────────────────────────────────────────
     st.markdown("---")
     st.subheader("3. NCBI 추가 정보 조회")
-    st.info("BLAST 결과에서 선택하거나, Locus ID / 유전자명을 직접 입력해 조회할 수 있습니다.")
+    st.info("BLAST 결과에서 선택하거나 Locus ID를 직접 입력하세요.")
 
     col_select, col_manual = st.columns([2, 1])
 
     with col_select:
         if st.session_state.get("blast_done"):
-            df_ref   = st.session_state["blast_df"]
-            # "Protein Name (Locus ID)" 형태로 옵션 표시
-            options  = [
+            df_ref  = st.session_state["blast_df"]
+            options = ["— 직접 입력 —"] + [
                 f"{row['Protein Name']}  [{row['Locus ID']}]"
                 for _, row in df_ref.iterrows()
             ]
-            selected = st.selectbox("결과에서 선택", ["— 직접 입력 —"] + options)
-            # Locus ID만 추출
+            selected = st.selectbox("결과에서 선택", options)
             if selected != "— 직접 입력 —":
-                import re as _re
-                match = _re.search(r'\[(.+?)\]', selected)
+                match   = re.search(r'\[(.+?)\]', selected)
                 auto_id = match.group(1) if match else ""
             else:
                 auto_id = ""
         else:
-            st.caption("BLAST 분석 결과가 없습니다. 위에서 분석을 먼저 실행하거나 아래에 직접 입력하세요.")
+            st.caption("위에서 BLAST 분석을 먼저 실행하거나 아래에 직접 입력하세요.")
             auto_id = ""
 
     with col_manual:
@@ -312,132 +310,205 @@ with tab1:
             key="ncbi_manual_id"
         )
 
-    # 최종 조회 ID 결정 (직접 입력 우선)
+    # 직접 입력 우선
     query_id = manual_id.strip() if manual_id.strip() else auto_id
 
     if query_id:
         st.caption(f"조회 대상: `{query_id}`")
 
-    # 버튼 3개
     btn_c1, btn_c2, btn_c3 = st.columns(3)
     with btn_c1:
-        gene_btn  = st.button("NCBI Gene 정보",       use_container_width=True)
+        gene_btn = st.button("📄 Nucleotide 정보 조회", use_container_width=True)
     with btn_c2:
-        prot_btn  = st.button("Protein 서열 조회",    use_container_width=True)
+        prot_btn = st.button("🧬 Protein 서열 조회",    use_container_width=True)
     with btn_c3:
-        link_btn  = st.button("NCBI 관련 링크 열기",  use_container_width=True)
+        link_btn = st.button("🌐 NCBI 관련 링크",       use_container_width=True)
 
-    # --- NCBI Gene 조회 ---
+
+    # ── Nucleotide 정보 조회 ──────────────────────
     if gene_btn:
         if not query_id:
             st.warning("조회할 ID를 선택하거나 입력해 주세요.")
         else:
-            with st.spinner(f"{query_id} — NCBI Gene 조회 중..."):
+            with st.spinner(f"{query_id} 조회 중..."):
                 try:
                     import time
-                    handle = Entrez.esearch(
-                        db="nucleotide",                        # gene DB 대신 nucleotide로
-                        term=f"{query_id}[Accession]",          # Accession 필드로 정확히 검색
+
+                    # Accession 필드로 정확히 검색
+                    h = Entrez.esearch(
+                        db="nucleotide",
+                        term=f"{query_id}[Accession]",
                         retmax=1
                     )
-                    record = Entrez.read(handle); handle.close()
-                    
-                    if record["IdList"]:
-                        nuc_id = record["IdList"][0]
-                        fh = Entrez.efetch(
-                            db="nucleotide", id=nuc_id,
-                            rettype="gb", retmode="text"        # GenBank 형식으로 상세 정보 가져오기
-                        )
-                        gb_info = fh.read(); fh.close()
-                        st.code(gb_info[:3000], language="text")
-                        st.markdown(f"🔗 [NCBI Nucleotide 페이지](https://www.ncbi.nlm.nih.gov/nuccore/{nuc_id})")
-                    else:
-                        # Organism 조건 없이 재시도
-                        handle2 = Entrez.esearch(db="gene", term=query_id)
-                        record2 = Entrez.read(handle2); handle2.close()
-                        if record2["IdList"]:
-                            gene_ncbi_id = record2["IdList"][0]
-                            st.info(f"종 조건 없이 검색된 Gene ID: {gene_ncbi_id}")
-                            st.markdown(
-                                f"[NCBI Gene 바로가기]"
-                                f"(https://www.ncbi.nlm.nih.gov/gene/{gene_ncbi_id})"
-                            )
-                        else:
-                            st.warning("NCBI Gene에서 해당 ID를 찾지 못했습니다.")
-                except Exception as e:
-                    st.error(f"Gene 조회 실패: {e}")
+                    r = Entrez.read(h); h.close()
+                    time.sleep(0.4)
 
-    # --- Protein 서열 조회 ---
+                    if r["IdList"]:
+                        uid = r["IdList"][0]
+                        fh  = Entrez.efetch(
+                            db="nucleotide", id=uid,
+                            rettype="gb", retmode="text"
+                        )
+                        gb_text = fh.read(); fh.close()
+
+                        st.success(f"조회 완료 — NCBI UID: {uid}")
+
+                        # GenBank에서 주요 정보만 파싱해서 요약 표시
+                        lines      = gb_text.split("\n")
+                        definition = next((l for l in lines if l.startswith("DEFINITION")), "")
+                        organism   = next((l for l in lines if "ORGANISM" in l), "")
+                        source     = next((l for l in lines if l.startswith("SOURCE")), "")
+
+                        col_i1, col_i2 = st.columns(2)
+                        with col_i1:
+                            st.markdown(f"**Definition:** {definition.replace('DEFINITION','').strip()}")
+                            st.markdown(f"**Source:** {source.replace('SOURCE','').strip()}")
+                        with col_i2:
+                            st.markdown(f"**Organism:** {organism.replace('ORGANISM','').strip()}")
+                            st.markdown(
+                                f"🔗 [NCBI Nucleotide 페이지]"
+                                f"(https://www.ncbi.nlm.nih.gov/nuccore/{uid})"
+                            )
+
+                        with st.expander("GenBank 전체 보기"):
+                            st.code(gb_text[:5000], language="text")
+
+                        st.download_button(
+                            "📥 GenBank 파일 다운로드",
+                            data=gb_text,
+                            file_name=f"{query_id}.gb",
+                            mime="text/plain"
+                        )
+                    else:
+                        st.warning(f"'{query_id}'를 NCBI Nucleotide에서 찾지 못했습니다.")
+                        st.markdown(
+                            f"[직접 검색해보기](https://www.ncbi.nlm.nih.gov/nuccore/?term={query_id})"
+                        )
+                except Exception as e:
+                    st.error(f"조회 실패: {e}")
+
+
+    # ── Protein 서열 조회 ─────────────────────────
     if prot_btn:
         if not query_id:
             st.warning("조회할 ID를 선택하거나 입력해 주세요.")
         else:
-            with st.spinner(f"{query_id} — Protein 서열 조회 중..."):
+            with st.spinner(f"{query_id} Protein 조회 중..."):
                 try:
                     import time
-                    # Protein 조회 수정
-                    handle = Entrez.esearch(
-                        db="protein",
-                        term=f"{query_id}[Accession]",          # 이름 검색 대신 Accession으로
+
+                    # 1단계: Nucleotide accession으로 linked protein 찾기
+                    h = Entrez.esearch(
+                        db="nucleotide",
+                        term=f"{query_id}[Accession]",
                         retmax=1
                     )
-                    record = Entrez.read(handle); handle.close()
+                    r = Entrez.read(h); h.close()
                     time.sleep(0.4)
 
-                    if record["IdList"]:
-                        prot_ncbi_id = record["IdList"][0]
-                        fh = Entrez.efetch(db="protein", id=prot_ncbi_id,
-                                           rettype="fasta", retmode="text")
-                        prot_fasta = fh.read(); fh.close()
+                    prot_fasta = None
+
+                    if r["IdList"]:
+                        nuc_uid = r["IdList"][0]
+
+                        # elink로 nucleotide → protein 연결
+                        lh = Entrez.elink(
+                            dbfrom="nucleotide",
+                            db="protein",
+                            id=nuc_uid
+                        )
+                        link_record = Entrez.read(lh); lh.close()
+                        time.sleep(0.4)
+
+                        prot_ids = []
+                        for linkset in link_record:
+                            for db_link in linkset.get("LinkSetDb", []):
+                                if db_link["LinkName"] == "nuccore_protein":
+                                    prot_ids = [l["Id"] for l in db_link["Link"]]
+                                    break
+
+                        if prot_ids:
+                            fh = Entrez.efetch(
+                                db="protein",
+                                id=prot_ids[0],          # 첫 번째 linked protein
+                                rettype="fasta",
+                                retmode="text"
+                            )
+                            prot_fasta = fh.read(); fh.close()
+
+                    # 2단계: elink 실패 시 protein DB에서 직접 검색
+                    if not prot_fasta:
+                        base_id = query_id.split(".")[0]
+                        h2 = Entrez.esearch(
+                            db="protein",
+                            term=f"{base_id}[Accession]",
+                            retmax=1
+                        )
+                        r2 = Entrez.read(h2); h2.close()
+                        time.sleep(0.4)
+
+                        if r2["IdList"]:
+                            fh2 = Entrez.efetch(
+                                db="protein",
+                                id=r2["IdList"][0],
+                                rettype="fasta",
+                                retmode="text"
+                            )
+                            prot_fasta = fh2.read(); fh2.close()
+
+                    if prot_fasta:
+                        lines  = prot_fasta.strip().split("\n")
+                        header = lines[0]
+                        seq    = "".join(lines[1:])
 
                         st.success("단백질 서열 조회 완료!")
-
-                        # 서열 요약 정보
-                        lines = prot_fasta.strip().split("\n")
-                        header = lines[0] if lines else ""
-                        seq    = "".join(lines[1:])
                         st.caption(f"헤더: {header} | 길이: {len(seq)} aa")
 
                         with st.expander("FASTA 서열 보기", expanded=True):
                             st.code(prot_fasta, language="text")
 
                         st.download_button(
-                            "FASTA 다운로드",
+                            "📥 FASTA 다운로드",
                             data=prot_fasta,
                             file_name=f"{query_id}_protein.fasta",
                             mime="text/plain"
                         )
                     else:
-                        st.warning("단백질 서열을 찾지 못했습니다.")
+                        st.warning("연결된 단백질 서열을 찾지 못했습니다.")
+                        st.markdown(
+                            f"[NCBI Protein에서 직접 검색]"
+                            f"(https://www.ncbi.nlm.nih.gov/protein/?term={query_id})"
+                        )
                 except Exception as e:
                     st.error(f"Protein 조회 실패: {e}")
 
-    # --- NCBI 링크 모음 ---
+
+    # ── NCBI 링크 모음 ────────────────────────────
     if link_btn:
         if not query_id:
             st.warning("조회할 ID를 선택하거나 입력해 주세요.")
         else:
             import urllib.parse
-            encoded = urllib.parse.quote(f"{query_id} Bursaphelenchus xylophilus")
-            plain   = urllib.parse.quote(query_id)
+            # ID를 그대로 accession으로 사용 (종 이름 붙이지 않음)
+            acc = urllib.parse.quote(query_id)
 
             st.markdown("#### 관련 NCBI 페이지")
             lc1, lc2, lc3, lc4 = st.columns(4)
             with lc1:
                 st.markdown(
-                    f"[🗄 Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/?term={encoded})"
+                    f"[🧬 Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/{acc})"
                 )
             with lc2:
                 st.markdown(
-                    f"[🗄 Protein](https://www.ncbi.nlm.nih.gov/protein/?term={encoded})"
+                    f"[🔬 Protein](https://www.ncbi.nlm.nih.gov/protein/?term={acc}[Accession])"
                 )
             with lc3:
                 st.markdown(
-                    f"[🗄 PubMed](https://pubmed.ncbi.nlm.nih.gov/?term={encoded})"
+                    f"[📚 PubMed](https://pubmed.ncbi.nlm.nih.gov/?term=Bursaphelenchus+xylophilus+{acc})"
                 )
             with lc4:
                 st.markdown(
-                    f"[🗄 Gene](https://www.ncbi.nlm.nih.gov/gene/?term={plain}%5BGene+Name%5D)"
+                    f"[🗄 BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE_TYPE=BlastSearch&QUERY={acc})"
                 )
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
