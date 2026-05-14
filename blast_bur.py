@@ -280,6 +280,10 @@ with tab1:
     # ──────────────────────────────────────────────
     # 섹션 3 : NCBI 추가 정보 조회
     # ──────────────────────────────────────────────
+    with st.expander("🔧 파일 목록 확인", expanded=True):
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        files = os.listdir(current_dir)
+        st.write(files)
 
     with st.expander("🔧 새 CDS 파일 헤더 확인", expanded=True):
         current_dir = os.path.dirname(os.path.abspath(__file__))
