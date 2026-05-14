@@ -127,20 +127,20 @@ import re
 
 
 with tab1:
-    with st.expander("🔧 locus_tag 매핑 확인", expanded=True):
+    with st.expander("🔧 새 CDS locus_tag 번호 확인", expanded=True):
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        st.write("**새 CDS 파일 locus_tag 샘플 (첫 5개):**")
-    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "cds_from_genomic_bur.fna"), "fasta")):
-        if i >= 5: break
-        # locus_tag와 protein_id만 추출
-        locus = re.search(r'\[locus_tag=([^\]]+)\]', rec.description)
-        prot  = re.search(r'\[protein_id=([^\]]+)\]', rec.description)
-    st.write(f"locus_tag: `{locus.group(1) if locus else 'None'}` | protein_id: `{prot.group(1) if prot else 'None'}`")
-    
-    st.write("**기존 CDS 파일 ID 샘플 (첫 5개):**")
-    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_blast_db"), "fasta")):
-        if i >= 5: break
-        st.write(f"ID: `{rec.id}` | gene: `{rec.description}`")
+        st.write("**새 CDS locus_tag 샘플 (첫 10개):**")
+        for i, rec in enumerate(SeqIO.parse(
+            os.path.join(current_dir, "cds_from_genomic_bur.fna"), "fasta")):
+            if i >= 10: break
+            locus = re.search(r'\[locus_tag=([^\]]+)\]', rec.description)
+            prot  = re.search(r'\[protein_id=([^\]]+)\]', rec.description)
+            st.write(f"`{locus.group(1) if locus else 'None'}` | `{prot.group(1) if prot else 'None'}`")
+        st.write("**pwn_pro_named.fa ID 샘플 (첫 10개):**")
+        for i, rec in enumerate(SeqIO.parse(
+            os.path.join(current_dir, "pwn_pro_named.fa"), "fasta")):
+            if i >= 10: break
+            st.write(f"`{rec.id}` | `{rec.description[:60]}`")
     st.header("프라이머 기반 타겟 유전자 분석")
 
     # ──────────────────────────────────────────────
