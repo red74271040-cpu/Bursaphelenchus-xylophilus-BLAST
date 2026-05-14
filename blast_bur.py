@@ -281,27 +281,18 @@ with tab1:
     # 섹션 3 : NCBI 추가 정보 조회
     # ──────────────────────────────────────────────
 
-    with st.expander("🔧 NCBI 검색 디버그", expanded=True):
-        import time
-        test_id = "BXY_0416800.1"
-        h = Entrez.esearch(db="nucleotide", term=f"{test_id}[Accession]", retmax=5)
-        r = Entrez.read(h); h.close()
-        st.write(f"Nucleotide [Accession] 결과: {r['IdList']}")
-        time.sleep(0.4)
-        
-        h2 = Entrez.esearch(db="nucleotide", term=test_id, retmax=5)
-        r2 = Entrez.read(h2); h2.close()
-        st.write(f"Nucleotide 전체검색 결과: {r2['IdList']}")
-        time.sleep(0.4)
-        
-        h3 = Entrez.esearch(db="protein", term=test_id, retmax=5)
-        r3 = Entrez.read(h3); h3.close()
-        st.write(f"Protein 전체검색 결과: {r3['IdList']}")
-        st.markdown("---")
-        st.subheader("3. NCBI 추가 정보 조회")
-        st.info("BLAST 결과에서 선택하거나 Locus ID를 직접 입력하세요.")
-
-    col_select, col_manual = st.columns([2, 1])
+    with st.expander("🔧 새 CDS 파일 헤더 확인", expanded=True):
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    st.write("**새 CDS (NCBI accession 있는 파일) 샘플:**")
+    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "ncbi_cds.fa"), "fasta")):
+        if i >= 3: break
+        st.code(rec.description)
+    
+    st.write("**기존 CDS (BXY ID 파일) 샘플:**")
+    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_cds.fa"), "fasta")):
+        if i >= 3: break
+        st.code(rec.description)
 
     with col_select:
         if st.session_state.get("blast_done"):
