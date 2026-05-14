@@ -127,7 +127,7 @@ import re
 
 
 with tab1:
-    st.header("🔬 프라이머 기반 타겟 유전자 분석")
+    st.header("프라이머 기반 타겟 유전자 분석")
 
     # ──────────────────────────────────────────────
     # 헬퍼 함수들
@@ -197,7 +197,7 @@ with tab1:
         key="tab1_primer_input"
     )
 
-    run_btn = st.button("🔍 타겟 유전자 분석 실행", use_container_width=True, type="primary")
+    run_btn = st.button("타겟 유전자 분석 실행", use_container_width=True, type="primary")
 
     if run_btn:
         if not query_seq.strip():
@@ -270,7 +270,7 @@ with tab1:
         # 결과 CSV 다운로드
         csv_data = df_sorted[["Protein Name","Locus ID","Identity(%)","E-value","BitScore"]].to_csv(index=True)
         st.download_button(
-            "📥 결과 CSV 다운로드",
+            "결과 CSV 다운로드",
             data=csv_data,
             file_name="blast_result_named.csv",
             mime="text/csv"
@@ -321,11 +321,11 @@ with tab1:
     # 버튼 3개
     btn_c1, btn_c2, btn_c3 = st.columns(3)
     with btn_c1:
-        gene_btn  = st.button("📄 NCBI Gene 정보",       use_container_width=True)
+        gene_btn  = st.button("NCBI Gene 정보",       use_container_width=True)
     with btn_c2:
-        prot_btn  = st.button("🧬 Protein 서열 조회",    use_container_width=True)
+        prot_btn  = st.button("Protein 서열 조회",    use_container_width=True)
     with btn_c3:
-        link_btn  = st.button("🌐 NCBI 관련 링크 열기",  use_container_width=True)
+        link_btn  = st.button("NCBI 관련 링크 열기",  use_container_width=True)
 
     # --- NCBI Gene 조회 ---
     if gene_btn:
@@ -352,7 +352,7 @@ with tab1:
                         with st.expander("Gene 상세 정보", expanded=True):
                             st.text(gene_info[:3000])
                         st.markdown(
-                            f"🔗 [NCBI Gene 페이지 바로가기]"
+                            f"[NCBI Gene 페이지 바로가기]"
                             f"(https://www.ncbi.nlm.nih.gov/gene/{gene_ncbi_id})"
                         )
                     else:
@@ -363,7 +363,7 @@ with tab1:
                             gene_ncbi_id = record2["IdList"][0]
                             st.info(f"종 조건 없이 검색된 Gene ID: {gene_ncbi_id}")
                             st.markdown(
-                                f"🔗 [NCBI Gene 바로가기]"
+                                f"[NCBI Gene 바로가기]"
                                 f"(https://www.ncbi.nlm.nih.gov/gene/{gene_ncbi_id})"
                             )
                         else:
@@ -404,7 +404,7 @@ with tab1:
                             st.code(prot_fasta, language="text")
 
                         st.download_button(
-                            "📥 FASTA 다운로드",
+                            "FASTA 다운로드",
                             data=prot_fasta,
                             file_name=f"{query_id}_protein.fasta",
                             mime="text/plain"
@@ -427,15 +427,15 @@ with tab1:
             lc1, lc2, lc3, lc4 = st.columns(4)
             with lc1:
                 st.markdown(
-                    f"[🧬 Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/?term={encoded})"
+                    f"[🗄 Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/?term={encoded})"
                 )
             with lc2:
                 st.markdown(
-                    f"[🔬 Protein](https://www.ncbi.nlm.nih.gov/protein/?term={encoded})"
+                    f"[🗄 Protein](https://www.ncbi.nlm.nih.gov/protein/?term={encoded})"
                 )
             with lc3:
                 st.markdown(
-                    f"[📚 PubMed](https://pubmed.ncbi.nlm.nih.gov/?term={encoded})"
+                    f"[🗄 PubMed](https://pubmed.ncbi.nlm.nih.gov/?term={encoded})"
                 )
             with lc4:
                 st.markdown(
