@@ -330,7 +330,7 @@ with tab1:
             if not clean_name or clean_name == "Hypothetical Protein":
                 search_term = "Bursaphelenchus xylophilus[Organism]"
             else:
-                search_term = f"{clean_name}[Title] AND Bursaphelenchus xylophilus[Organism]"
+                search_term = f"{clean_name} AND Bursaphelenchus xylophilus[Organism]"
 
             st.info(f"검색어: `{search_term}`")
 
@@ -402,7 +402,7 @@ with tab1:
             if not clean_name or clean_name == "Hypothetical Protein":
                 search_term = "Bursaphelenchus xylophilus[Organism]"
             else:
-                search_term = f"{clean_name}[Title] AND Bursaphelenchus xylophilus[Organism]"
+                search_term = f"{clean_name} AND Bursaphelenchus xylophilus[Organism]"
 
             st.info(f"검색어: `{search_term}`")
 
