@@ -126,7 +126,145 @@ import re
 
 
 
-with col_select:
+with tab1:
+    st.header("🔬 프라이머 기반 타겟 유전자 분석")
+
+    # ──────────────────────────────────────────────
+    # 헬퍼 함수
+    # ──────────────────────────────────────────────
+
+    @st.cache_data
+    def build_id_mapping_table():
+        current_dir  = os.path.dirname(os.path.abspath(__file__))
+        protein_path = os.path.join(current_dir, "pwn_pro_named.fa")
+        mapping = {}
+        if os.path.exists(protein_path):
+            for record in SeqIO.parse(protein_path, "fasta"):
+                prot_id   = str(record.id)
+                desc_parts = record.description.split(" ")
+                if len(desc_parts) >= 3 and desc_parts[1] == prot_id:
+                    name = " ".join(desc_parts[2:]).strip()
+                elif len(desc_parts) >= 2:
+                    name = " ".join(desc_parts[1:]).strip()
+                else:
+                    name = "Hypothetical Protein"
+                name = name.replace("%0A", " ").replace("%0a", " ").strip()
+                if len(name) > 60:
+                    name = name[:60] + "..."
+                mapping[prot_id]               = name
+                mapping[prot_id.split(".")[0]] = name
+        return mapping
+
+    @st.cache_resource
+    def ensure_blast_db():
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path  = os.path.join(current_dir, "pwn_blast_db", "pwn_blast_db")
+        cds_path = os.path.join(current_dir, "pwn_cds.fa")
+        if not os.path.exists(db_path + ".nhr"):
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            subprocess.run([
+                "makeblastdb", "-in", cds_path,
+                "-dbtype", "nucl", "-out", db_path
+            ], check=True)
+        return db_path
+
+    def get_protein_name(locus_id, mapping):
+        raw  = str(locus_id).strip()
+        base = raw.split(".")[0]
+        return mapping.get(raw) or mapping.get(base) or "Hypothetical Protein"
+
+    # ──────────────────────────────────────────────
+    # 섹션 1: 프라이머 BLAST 분석
+    # ──────────────────────────────────────────────
+    st.subheader("1. 프라이머 서열 입력")
+
+    query_seq = st.text_area(
+        "프라이머 서열을 입력하세요 (ATGC...)",
+        height=100,
+        placeholder="예: GCTTCACAGCAGTGCCAAG",
+        key="tab1_primer_input"
+    )
+
+    run_btn = st.button("🔍 타겟 유전자 분석 실행", use_container_width=True, type="primary")
+
+    if run_btn:
+        if not query_seq.strip():
+            st.warning("프라이머 서열을 입력해 주세요.")
+        else:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            temp_query  = os.path.join(current_dir, "temp_query.fa")
+            result_csv  = os.path.join(current_dir, "blast_result.csv")
+
+            with st.spinner("BLAST 분석 중..."):
+                try:
+                    db_path = ensure_blast_db()
+
+                    with open(temp_query, "w") as f:
+                        f.write(f">Query\n{query_seq.strip()}")
+
+                    subprocess.run([
+                        "blastn", "-query", temp_query, "-db", db_path,
+                        "-out", result_csv,
+                        "-outfmt", "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                        "-task", "blastn-short", "-evalue", "1000"
+                    ], check=True)
+
+                    if os.path.exists(result_csv) and os.path.getsize(result_csv) > 0:
+                        df = pd.read_csv(result_csv, names=[
+                            "Query", "Locus ID", "Identity(%)", "Length",
+                            "Mismatch", "Gaps", "Q_Start", "Q_End",
+                            "S_Start", "S_End", "E-value", "BitScore"
+                        ])
+                        mapping = build_id_mapping_table()
+                        df["Protein Name"] = df["Locus ID"].apply(
+                            lambda x: get_protein_name(x, mapping)
+                        )
+                        df_sorted = df.sort_values("E-value").reset_index(drop=True)
+                        df_sorted.index += 1
+                        st.session_state["blast_df"]   = df_sorted
+                        st.session_state["blast_done"] = True
+                    else:
+                        st.error("BLAST 결과가 없습니다. 서열을 확인해 주세요.")
+                        st.session_state["blast_done"] = False
+
+                except Exception as e:
+                    st.error(f"분석 중 오류 발생: {e}")
+                    st.session_state["blast_done"] = False
+
+    # ──────────────────────────────────────────────
+    # 섹션 2: BLAST 결과 테이블
+    # ──────────────────────────────────────────────
+    if st.session_state.get("blast_done"):
+        df_sorted = st.session_state["blast_df"]
+
+        st.markdown("---")
+        st.subheader("2. 분석 결과 — 후보 유전자 목록")
+        st.caption(f"총 {len(df_sorted)}개 결과 | E-value 오름차순 정렬 (상위 = 높은 유사도)")
+
+        st.dataframe(
+            df_sorted[["Protein Name", "Locus ID", "Identity(%)", "E-value", "BitScore"]],
+            use_container_width=True,
+            height=min(400, 40 + len(df_sorted) * 35)
+        )
+
+        csv_data = df_sorted[["Protein Name", "Locus ID", "Identity(%)", "E-value", "BitScore"]].to_csv(index=True)
+        st.download_button(
+            "📥 결과 CSV 다운로드",
+            data=csv_data,
+            file_name="blast_result_named.csv",
+            mime="text/csv"
+        )
+
+    # ──────────────────────────────────────────────
+    # 섹션 3: NCBI 추가 정보 조회
+    # ──────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("3. NCBI 추가 정보 조회")
+    st.info("BLAST 결과에서 선택하거나 Locus ID를 직접 입력하세요.")
+
+    col_select, col_manual = st.columns([2, 1])
+
+    with col_select:
         if st.session_state.get("blast_done"):
             df_ref  = st.session_state["blast_df"]
             options = ["— 직접 입력 —"] + [
@@ -150,7 +288,6 @@ with col_select:
             key="ncbi_manual_id"
         )
 
-    # 직접 입력 우선
     query_id = manual_id.strip() if manual_id.strip() else auto_id
 
     if query_id:
@@ -164,57 +301,52 @@ with col_select:
     with btn_c3:
         link_btn = st.button("🌐 NCBI 관련 링크",       use_container_width=True)
 
-
     # ── Nucleotide 정보 조회 ──────────────────────
     if gene_btn:
         if not query_id:
             st.warning("조회할 ID를 선택하거나 입력해 주세요.")
         else:
             import time
-            mapping   = build_id_mapping_table()
-            prot_name = get_protein_name(query_id, mapping)
-            
-            # 단백질 이름에서 검색어 정제
-            clean_name = (prot_name
-                .replace("...", "")
-                .replace("%0A", "")
-                .strip())
-            
-            if clean_name == "Hypothetical Protein" or not clean_name:
-                search_term = f"Bursaphelenchus xylophilus[Organism]"
+            mapping    = build_id_mapping_table()
+            prot_name  = get_protein_name(query_id, mapping)
+            clean_name = prot_name.replace("...", "").replace("%0A", "").strip()
+
+            if not clean_name or clean_name == "Hypothetical Protein":
+                search_term = "Bursaphelenchus xylophilus[Organism]"
             else:
                 search_term = f"{clean_name}[Title] AND Bursaphelenchus xylophilus[Organism]"
-            
+
             st.info(f"검색어: `{search_term}`")
-            
+
             with st.spinner("NCBI Nucleotide 검색 중..."):
                 try:
-                    h = Entrez.esearch(
-                        db="nucleotide",
-                        term=search_term,
-                        retmax=5
-                    )
-                    r = Entrez.read(h); h.close()
+                    h = Entrez.esearch(db="nucleotide", term=search_term, retmax=5)
+                    r = Entrez.read(h)
+                    h.close()
                     time.sleep(0.4)
-                    
+
                     if r["IdList"]:
                         st.success(f"{len(r['IdList'])}개 결과 발견")
-                        
+
                         for uid in r["IdList"][:3]:
                             fh = Entrez.efetch(
                                 db="nucleotide", id=uid,
                                 rettype="gb", retmode="text"
                             )
-                            gb_text = fh.read(); fh.close()
+                            gb_text = fh.read()
+                            fh.close()
                             time.sleep(0.4)
-                            
+
                             lines      = gb_text.split("\n")
                             definition = next((l for l in lines if l.startswith("DEFINITION")), "")
                             organism   = next((l for l in lines if "ORGANISM" in l), "")
                             accession  = next((l for l in lines if l.startswith("ACCESSION")), "")
-                            acc_id     = accession.replace("ACCESSION","").strip().split()[0] if accession else uid
-                            
-                            with st.expander(f"📄 {acc_id} — {definition.replace('DEFINITION','').strip()[:60]}", expanded=True):
+                            acc_id     = accession.replace("ACCESSION", "").strip().split()[0] if accession else uid
+
+                            with st.expander(
+                                f"📄 {acc_id} — {definition.replace('DEFINITION','').strip()[:60]}",
+                                expanded=True
+                            ):
                                 col_i1, col_i2 = st.columns(2)
                                 with col_i1:
                                     st.markdown(f"**Accession:** `{acc_id}`")
@@ -222,7 +354,7 @@ with col_select:
                                 with col_i2:
                                     st.markdown(f"**Organism:** {organism.replace('ORGANISM','').strip()}")
                                     st.markdown(f"🔗 [NCBI Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/{acc_id})")
-                                
+
                                 st.download_button(
                                     f"📥 GenBank 다운로드 ({acc_id})",
                                     data=gb_text,
@@ -237,9 +369,9 @@ with col_select:
                             f"(https://www.ncbi.nlm.nih.gov/nuccore/?term="
                             f"{urllib.parse.quote(search_term)})"
                         )
+
                 except Exception as e:
                     st.error(f"조회 실패: {e}")
-
 
     # ── Protein 서열 조회 ─────────────────────────
     if prot_btn:
@@ -247,51 +379,46 @@ with col_select:
             st.warning("조회할 ID를 선택하거나 입력해 주세요.")
         else:
             import time
-            mapping   = build_id_mapping_table()
-            prot_name = get_protein_name(query_id, mapping)
-            
+            mapping    = build_id_mapping_table()
+            prot_name  = get_protein_name(query_id, mapping)
             clean_name = prot_name.replace("...", "").replace("%0A", "").strip()
-            
-            if clean_name == "Hypothetical Protein" or not clean_name:
-                search_term = f"Bursaphelenchus xylophilus[Organism]"
+
+            if not clean_name or clean_name == "Hypothetical Protein":
+                search_term = "Bursaphelenchus xylophilus[Organism]"
             else:
                 search_term = f"{clean_name}[Title] AND Bursaphelenchus xylophilus[Organism]"
-            
+
             st.info(f"검색어: `{search_term}`")
-            
+
             with st.spinner("NCBI Protein 검색 중..."):
                 try:
-                    h = Entrez.esearch(
-                        db="protein",
-                        term=search_term,
-                        retmax=5
-                    )
-                    r = Entrez.read(h); h.close()
+                    h = Entrez.esearch(db="protein", term=search_term, retmax=5)
+                    r = Entrez.read(h)
+                    h.close()
                     time.sleep(0.4)
-                    
+
                     if r["IdList"]:
                         st.success(f"{len(r['IdList'])}개 단백질 발견")
-                        
-                        # 전체 FASTA 한번에 가져오기
+
                         fh = Entrez.efetch(
                             db="protein",
                             id=",".join(r["IdList"][:3]),
                             rettype="fasta",
                             retmode="text"
                         )
-                        prot_fasta = fh.read(); fh.close()
-                        
+                        prot_fasta = fh.read()
+                        fh.close()
+
                         with st.expander("단백질 FASTA 서열", expanded=True):
                             st.code(prot_fasta, language="text")
-                        
+
                         st.download_button(
                             "📥 Protein FASTA 다운로드",
                             data=prot_fasta,
                             file_name=f"{query_id}_protein.fasta",
                             mime="text/plain"
                         )
-                        
-                        # 각 단백질 NCBI 링크
+
                         for uid in r["IdList"][:3]:
                             st.markdown(
                                 f"🔗 [NCBI Protein {uid}]"
@@ -304,29 +431,30 @@ with col_select:
                             f"(https://www.ncbi.nlm.nih.gov/protein/?term="
                             f"{urllib.parse.quote(search_term)})"
                         )
+
                 except Exception as e:
                     st.error(f"Protein 조회 실패: {e}")
-
 
     # ── NCBI 링크 모음 ────────────────────────────
     if link_btn:
         if not query_id:
             st.warning("조회할 ID를 선택하거나 입력해 주세요.")
         else:
-            mapping   = build_id_mapping_table()
-            prot_name = get_protein_name(query_id, mapping)
-            clean_name = prot_name.replace("...", "").replace("%0A","").strip()
-            
-            # 단백질 이름 또는 종명으로 검색
+            mapping    = build_id_mapping_table()
+            prot_name  = get_protein_name(query_id, mapping)
+            clean_name = prot_name.replace("...", "").replace("%0A", "").strip()
+
             if clean_name and clean_name != "Hypothetical Protein":
                 search_q = f"{clean_name} Bursaphelenchus xylophilus"
             else:
                 search_q = "Bursaphelenchus xylophilus"
-            
-            encoded = urllib.parse.quote(search_q)
-            
+
+            encoded     = urllib.parse.quote(search_q)
+            encoded_id  = urllib.parse.quote(query_id)
+
             st.markdown(f"**검색어:** `{search_q}`")
             st.markdown("#### 관련 NCBI 페이지")
+
             lc1, lc2, lc3, lc4 = st.columns(4)
             with lc1:
                 st.markdown(f"[🧬 Nucleotide](https://www.ncbi.nlm.nih.gov/nuccore/?term={encoded})")
@@ -335,7 +463,10 @@ with col_select:
             with lc3:
                 st.markdown(f"[📚 PubMed](https://pubmed.ncbi.nlm.nih.gov/?term={encoded})")
             with lc4:
-                st.markdown(f"[🗄 BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE_TYPE=BlastSearch&QUERY={urllib.parse.quote(query_id)})")
+                st.markdown(
+                    f"[🗄 BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi"
+                    f"?PAGE_TYPE=BlastSearch&QUERY={encoded_id})"
+                )
 with tab2:
     st.header("🧬 si-Fi RNAi 분석 엔진")
     st.info("CDS 파일을 업로드하여 최적의 siRNA 후보군을 탐색합니다.")
