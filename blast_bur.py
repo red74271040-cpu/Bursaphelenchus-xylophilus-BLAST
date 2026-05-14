@@ -127,7 +127,7 @@ import re
 
 
 with tab1:
-    st.header("🔬 프라이머 기반 타겟 유전자 분석")
+    st.header("프라이머를 통한 타겟 유전자 분석")
 
     # ──────────────────────────────────────────────
     # 헬퍼 함수
@@ -180,7 +180,7 @@ with tab1:
         key="tab1_primer_input"
     )
 
-    run_btn = st.button("🔍 타겟 유전자 분석 실행", use_container_width=True, type="primary")
+    run_btn = st.button("타겟 유전자 분석 실행", use_container_width=True, type="primary")
 
     if run_btn:
         if not query_seq.strip():
@@ -244,7 +244,7 @@ with tab1:
 
         csv_data = df_sorted[["Protein Name", "Locus ID", "Identity(%)", "E-value", "BitScore"]].to_csv(index=True)
         st.download_button(
-            "📥 결과 CSV 다운로드",
+            "결과 CSV 다운로드",
             data=csv_data,
             file_name="blast_result_named.csv",
             mime="text/csv"
@@ -289,7 +289,7 @@ with tab1:
     if query_id:
         st.caption(f"조회 대상: `{base_id}`")
 
-    link_btn = st.button("🌐 WormBase ParaSite에서 검색", use_container_width=True)
+    link_btn = st.button("WormBase ParaSite에서 검색", use_container_width=True)
 
     if link_btn:
         if not base_id:
@@ -298,13 +298,13 @@ with tab1:
             mapping   = build_id_mapping_table()
             prot_name = get_protein_name(query_id, mapping)
             st.markdown(
-                f"[🔍 **{base_id}** — WormBase ParaSite 전체 검색]"
+                f"[**{base_id}** — WormBase ParaSite 전체 검색]"
                 f"(https://parasite.wormbase.org/Multi/Search/Results?q={base_id})"
             )
             st.caption(f"단백질 이름: {prot_name}")
                 
 with tab2:
-    st.header("🧬 si-Fi RNAi 분석 엔진")
+    st.header("si-Fi RNAi 분석 엔진")
     st.info("CDS 파일을 업로드하여 최적의 siRNA 후보군을 탐색합니다.")
 
     # 1. 파일 업로드 칸 추가
