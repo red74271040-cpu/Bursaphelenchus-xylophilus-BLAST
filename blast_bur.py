@@ -114,6 +114,38 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene조정 및 파일형식 변환"
 ])
 
+with st.expander("🔧 ID 디버그 (확인 후 삭제)"):
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    st.write("**BLAST 결과 Locus ID 샘플:**")
+    result_csv = os.path.join(current_dir, "blast_result.csv")
+    if os.path.exists(result_csv):
+        df_debug = pd.read_csv(result_csv, names=[
+            "Query","Locus ID","Identity(%)","Length",
+            "Mismatch","Gaps","Q_Start","Q_End",
+            "S_Start","S_End","E-value","BitScore"
+        ])
+        st.dataframe(df_debug[["Locus ID"]].head(5))  # ← 실제 ID 형태 확인
+    
+    st.write("**CDS FASTA ID 샘플:**")
+    cds_ids = []
+    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_cds.fa"), "fasta")):
+        if i >= 5: break
+        cds_ids.append({"ID": rec.id, "Description": rec.description[:80]})
+    st.dataframe(pd.DataFrame(cds_ids))
+    
+    st.write("**Protein FASTA ID 샘플:**")
+    prot_ids = []
+    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_pro_named.fa"), "fasta")):
+        if i >= 5: break
+        prot_ids.append({"ID": rec.id, "Description": rec.description[:80]})
+    st.dataframe(pd.DataFrame(prot_ids))
+    
+    st.write("**매핑 테이블 샘플 (첫 5개):**")
+    mapping = build_id_mapping_table()
+    sample = dict(list(mapping.items())[:5])
+    st.json(sample)
+
 import re
 import urllib.parse
 import subprocess
