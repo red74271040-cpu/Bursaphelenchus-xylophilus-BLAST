@@ -294,9 +294,9 @@ with tab1:
                 auto_id = match.group(1) if match else ""
             else:
                 auto_id = ""
-        else:
-            st.caption("위에서 BLAST 분석을 먼저 실행하거나 아래에 직접 입력하세요.")
-            auto_id = ""
+            else:
+                st.caption("위에서 BLAST 분석을 먼저 실행하거나 아래에 직접 입력하세요.")
+                auto_id = ""
 
     with col_manual:
         manual_id = st.text_input(
