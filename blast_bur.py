@@ -114,25 +114,6 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene조정 및 파일형식 변환"
 ])
 
-with st.expander("🔧 ID 매핑 디버그", expanded=True):
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # 1. Protein FASTA ID 샘플
-    st.write("**Protein FASTA ID 샘플 (첫 5개):**")
-    prot_sample = []
-    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_pro_named.fa"), "fasta")):
-        if i >= 5: break
-        prot_sample.append({"rec.id": rec.id, "description": rec.description[:80]})
-    st.dataframe(pd.DataFrame(prot_sample))
-    
-    # 2. 실제 매핑 테이블에 BLAST ID가 있는지 직접 확인
-    st.write("**BLAST ID → 매핑 결과:**")
-    mapping = build_id_mapping_table()
-    test_ids = ["BXY_1015500.1", "BXY_1532700.1", "BXY_1760700.1"]
-    for tid in test_ids:
-        base = tid.split(".")[0]
-        st.write(f"`{tid}` → `{mapping.get(tid, 'MISS')}`")
-        st.write(f"`{base}` → `{mapping.get(base, 'MISS')}`")
 
 import re
 import urllib.parse
@@ -153,32 +134,39 @@ with tab1:
     # ──────────────────────────────────────────────
 
     @st.cache_data
-    def build_id_mapping_table():
-        """CDS FASTA + Protein FASTA → {BXY_XXXXXXX : 단백질이름} 딕셔너리"""
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        cds_path     = os.path.join(current_dir, "pwn_cds.fa")          # ← 실제 CDS 파일명으로 수정
-        protein_path = os.path.join(current_dir, "pwn_pro_named.fa")    # ← 실제 Protein 파일명으로 수정
+    @st.cache_data
+def build_id_mapping_table():
+    current_dir  = os.path.dirname(os.path.abspath(__file__))
+    protein_path = os.path.join(current_dir, "pwn_pro_named.fa")
 
-        prot_name_dict = {}
-        if os.path.exists(protein_path):
-            for record in SeqIO.parse(protein_path, "fasta"):
-                prot_id = str(record.id)                                  # ex) BXY_0416800.1
-                parts   = record.description.split(" ", 1)
-                name    = parts[1].strip() if len(parts) > 1 else "Hypothetical Protein"
-                prot_name_dict[prot_id]               = name             # BXY_0416800.1
-                prot_name_dict[prot_id.split(".")[0]] = name             # BXY_0416800
+    mapping = {}
+    if os.path.exists(protein_path):
+        for record in SeqIO.parse(protein_path, "fasta"):
+            prot_id = str(record.id)  # ex) BXY_0416800.1
 
-        cds_to_prot = {}
-        if os.path.exists(cds_path):
-            for record in SeqIO.parse(cds_path, "fasta"):
-                cds_id  = str(record.id)
-                base_id = cds_id.split(".")[0]
-                name = (prot_name_dict.get(cds_id) or
-                        prot_name_dict.get(base_id) or
-                        "Hypothetical Protein")
-                cds_to_prot[cds_id]  = name
-                cds_to_prot[base_id] = name
-        return cds_to_prot
+            # description = "BXY_0416800.1 BXY_0416800.1 7TM GPCR..."
+            # ID가 두 번 반복되므로 두 번째 공백 이후가 실제 이름
+            desc_parts = record.description.split(" ")
+            # desc_parts[0] = BXY_..., desc_parts[1] = BXY_... (중복), desc_parts[2:] = 이름
+            if len(desc_parts) >= 3 and desc_parts[1] == prot_id:
+                name = " ".join(desc_parts[2:]).strip()
+            elif len(desc_parts) >= 2:
+                name = " ".join(desc_parts[1:]).strip()
+            else:
+                name = "Hypothetical Protein"
+
+            # %0A 개행문자 치환 (설명에 섞인 URL 인코딩 제거)
+            name = name.replace("%0A", " ").replace("%0a", " ").strip()
+            
+            # 너무 길면 자르기
+            if len(name) > 60:
+                name = name[:60] + "..."
+
+            # 버전 있는 ID / 버전 없는 ID 둘 다 등록
+            mapping[prot_id]               = name   # BXY_0416800.1
+            mapping[prot_id.split(".")[0]] = name   # BXY_0416800
+
+    return mapping
 
     @st.cache_resource
     def ensure_blast_db():
@@ -196,9 +184,9 @@ with tab1:
         return db_path
 
     def get_protein_name(locus_id, mapping):
-        raw  = str(locus_id).strip()
-        base = raw.split(".")[0]
-        return mapping.get(raw) or mapping.get(base) or "No Match Found"
+        raw  = str(locus_id).strip()       # ex) BXY_1015500.1
+        base = raw.split(".")[0]           # ex) BXY_1015500
+        return mapping.get(raw) or mapping.get(base) or "Hypothetical Protein"
 
     # ──────────────────────────────────────────────
     # 섹션 1 : 프라이머 BLAST 분석
