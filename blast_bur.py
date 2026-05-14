@@ -114,37 +114,25 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "Gene조정 및 파일형식 변환"
 ])
 
-with st.expander("🔧 ID 디버그 (확인 후 삭제)"):
+with st.expander("🔧 ID 매핑 디버그", expanded=True):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     
-    st.write("**BLAST 결과 Locus ID 샘플:**")
-    result_csv = os.path.join(current_dir, "blast_result.csv")
-    if os.path.exists(result_csv):
-        df_debug = pd.read_csv(result_csv, names=[
-            "Query","Locus ID","Identity(%)","Length",
-            "Mismatch","Gaps","Q_Start","Q_End",
-            "S_Start","S_End","E-value","BitScore"
-        ])
-        st.dataframe(df_debug[["Locus ID"]].head(5))  # ← 실제 ID 형태 확인
-    
-    st.write("**CDS FASTA ID 샘플:**")
-    cds_ids = []
-    for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_cds.fa"), "fasta")):
-        if i >= 5: break
-        cds_ids.append({"ID": rec.id, "Description": rec.description[:80]})
-    st.dataframe(pd.DataFrame(cds_ids))
-    
-    st.write("**Protein FASTA ID 샘플:**")
-    prot_ids = []
+    # 1. Protein FASTA ID 샘플
+    st.write("**Protein FASTA ID 샘플 (첫 5개):**")
+    prot_sample = []
     for i, rec in enumerate(SeqIO.parse(os.path.join(current_dir, "pwn_pro_named.fa"), "fasta")):
         if i >= 5: break
-        prot_ids.append({"ID": rec.id, "Description": rec.description[:80]})
-    st.dataframe(pd.DataFrame(prot_ids))
+        prot_sample.append({"rec.id": rec.id, "description": rec.description[:80]})
+    st.dataframe(pd.DataFrame(prot_sample))
     
-    st.write("**매핑 테이블 샘플 (첫 5개):**")
+    # 2. 실제 매핑 테이블에 BLAST ID가 있는지 직접 확인
+    st.write("**BLAST ID → 매핑 결과:**")
     mapping = build_id_mapping_table()
-    sample = dict(list(mapping.items())[:5])
-    st.json(sample)
+    test_ids = ["BXY_1015500.1", "BXY_1532700.1", "BXY_1760700.1"]
+    for tid in test_ids:
+        base = tid.split(".")[0]
+        st.write(f"`{tid}` → `{mapping.get(tid, 'MISS')}`")
+        st.write(f"`{base}` → `{mapping.get(base, 'MISS')}`")
 
 import re
 import urllib.parse
