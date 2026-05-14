@@ -127,28 +127,6 @@ import re
 
 
 with tab1:
-    with st.expander("🔧 NCBI 전체 디버그", expanded=True):
-        import time
-        mapping = build_id_mapping_table()
-        test_bxy = "BXY_0416800.1"
-        prot_name = get_protein_name(test_bxy, mapping)
-        st.write(f"BXY ID: `{test_bxy}`")
-        st.write(f"단백질 이름: `{prot_name}`")
-        clean_name = prot_name.replace("...", "").replace("%0A", "").strip()
-        search_term = f"{clean_name} AND Bursaphelenchus xylophilus[Organism]"
-        st.write(f"실제 검색어: `{search_term}`")
-        st.markdown("---")
-        
-        h = Entrez.esearch(db="nucleotide", term=search_term, retmax=3)
-        r = Entrez.read(h); h.close()
-        time.sleep(0.5)
-        st.write(f"Nucleotide 결과 ID: `{r['IdList']}`")
-        st.markdown("---")
-        
-        h2 = Entrez.esearch(db="protein", term=search_term, retmax=3)
-        r2 = Entrez.read(h2); h2.close()
-        time.sleep(0.5)
-        st.write(f"Protein 결과 ID: `{r2['IdList']}`")
     
   
     st.header("🔬 프라이머 기반 타겟 유전자 분석")
@@ -278,6 +256,30 @@ with tab1:
             file_name="blast_result_named.csv",
             mime="text/csv"
         )
+
+    with st.expander("🔧 NCBI 전체 디버그", expanded=True):
+        import time
+        mapping = build_id_mapping_table()
+        test_bxy = "BXY_0416800.1"
+        prot_name = get_protein_name(test_bxy, mapping)
+        st.write(f"BXY ID: `{test_bxy}`")
+        st.write(f"단백질 이름: `{prot_name}`")
+        clean_name = prot_name.replace("...", "").replace("%0A", "").strip()
+        search_term = f"{clean_name} AND Bursaphelenchus xylophilus[Organism]"
+        st.write(f"실제 검색어: `{search_term}`")
+        st.markdown("---")
+        
+        h = Entrez.esearch(db="nucleotide", term=search_term, retmax=3)
+        r = Entrez.read(h); h.close()
+        time.sleep(0.5)
+        st.write(f"Nucleotide 결과 ID: `{r['IdList']}`")
+        st.markdown("---")
+        
+        h2 = Entrez.esearch(db="protein", term=search_term, retmax=3)
+        r2 = Entrez.read(h2); h2.close()
+        time.sleep(0.5)
+        st.write(f"Protein 결과 ID: `{r2['IdList']}`")
+    
 
     # ──────────────────────────────────────────────
     # 섹션 3: NCBI 추가 정보 조회
