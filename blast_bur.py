@@ -127,21 +127,7 @@ import re
 
 
 with tab1:
-    with st.expander("🔧 NCBI 검색 디버그", expanded=True):
-        import time
-        test_cases = [
-            "7TM GPCR[Title] AND Bursaphelenchus xylophilus[Organism]",
-            "7TM GPCR AND Bursaphelenchus xylophilus[Organism]",
-            "Bursaphelenchus xylophilus[Organism]",
-        ]
     
-    for term in test_cases:
-        h = Entrez.esearch(db="nucleotide", term=term, retmax=3)
-        r = Entrez.read(h); h.close()
-        time.sleep(0.5)
-        st.write(f"검색어: `{term}`")
-        st.write(f"결과: `{r['IdList']}`")
-        st.markdown("---")
   
     st.header("🔬 프라이머 기반 타겟 유전자 분석")
 
