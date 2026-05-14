@@ -336,25 +336,21 @@ with tab1:
                 try:
                     import time
                     handle = Entrez.esearch(
-                        db="gene",
-                        term=f"{query_id}[Gene Name] AND Bursaphelenchus xylophilus[Organism]"
+                        db="nucleotide",                        # gene DB 대신 nucleotide로
+                        term=f"{query_id}[Accession]",          # Accession 필드로 정확히 검색
+                        retmax=1
                     )
                     record = Entrez.read(handle); handle.close()
-                    time.sleep(0.4)
-
+                    
                     if record["IdList"]:
-                        gene_ncbi_id = record["IdList"][0]
-                        fh = Entrez.efetch(db="gene", id=gene_ncbi_id,
-                                           rettype="gene_table", retmode="text")
-                        gene_info = fh.read(); fh.close()
-
-                        st.success(f"NCBI Gene ID: {gene_ncbi_id}")
-                        with st.expander("Gene 상세 정보", expanded=True):
-                            st.text(gene_info[:3000])
-                        st.markdown(
-                            f"[NCBI Gene 페이지 바로가기]"
-                            f"(https://www.ncbi.nlm.nih.gov/gene/{gene_ncbi_id})"
+                        nuc_id = record["IdList"][0]
+                        fh = Entrez.efetch(
+                            db="nucleotide", id=nuc_id,
+                            rettype="gb", retmode="text"        # GenBank 형식으로 상세 정보 가져오기
                         )
+                        gb_info = fh.read(); fh.close()
+                        st.code(gb_info[:3000], language="text")
+                        st.markdown(f"🔗 [NCBI Nucleotide 페이지](https://www.ncbi.nlm.nih.gov/nuccore/{nuc_id})")
                     else:
                         # Organism 조건 없이 재시도
                         handle2 = Entrez.esearch(db="gene", term=query_id)
@@ -379,9 +375,11 @@ with tab1:
             with st.spinner(f"{query_id} — Protein 서열 조회 중..."):
                 try:
                     import time
+                    # Protein 조회 수정
                     handle = Entrez.esearch(
                         db="protein",
-                        term=f"{query_id} Bursaphelenchus xylophilus"
+                        term=f"{query_id}[Accession]",          # 이름 검색 대신 Accession으로
+                        retmax=1
                     )
                     record = Entrez.read(handle); handle.close()
                     time.sleep(0.4)
