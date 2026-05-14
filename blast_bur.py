@@ -280,6 +280,27 @@ with tab1:
     # ──────────────────────────────────────────────
     # 섹션 3 : NCBI 추가 정보 조회
     # ──────────────────────────────────────────────
+
+    with st.expander("🔧 NCBI 검색 디버그", expanded=True):
+    import time
+    test_id = "BXY_0416800.1"
+    
+    # 1. Nucleotide 검색
+    h = Entrez.esearch(db="nucleotide", term=f"{test_id}[Accession]", retmax=5)
+    r = Entrez.read(h); h.close()
+    st.write(f"Nucleotide [Accession] 결과: {r['IdList']}")
+    time.sleep(0.4)
+    
+    # 2. 전체 검색 (필드 없이)
+    h2 = Entrez.esearch(db="nucleotide", term=test_id, retmax=5)
+    r2 = Entrez.read(h2); h2.close()
+    st.write(f"Nucleotide 전체검색 결과: {r2['IdList']}")
+    time.sleep(0.4)
+    
+    # 3. Protein 검색
+    h3 = Entrez.esearch(db="protein", term=test_id, retmax=5)
+    r3 = Entrez.read(h3); h3.close()
+    st.write(f"Protein 전체검색 결과: {r3['IdList']}")
     st.markdown("---")
     st.subheader("3. NCBI 추가 정보 조회")
     st.info("BLAST 결과에서 선택하거나 Locus ID를 직접 입력하세요.")
