@@ -439,13 +439,13 @@ with tab3:
                 if lane_idx <= num_lanes:
                     # 메인 밴드 (강한 주황 형광)
                     ax.hlines(y=bp, xmin=lane_idx - 0.35, xmax=lane_idx + 0.35, 
-                              colors='#FF7F24', linewidth=6, alpha=0.95)
+                              colors='#FF7F24', linewidth=2, alpha=0.95)
                     # 번짐 효과 (Glow)
                     ax.hlines(y=bp, xmin=lane_idx - 0.4, xmax=lane_idx + 0.4, 
-                              colors='#FFA54F', linewidth=10, alpha=0.2)
+                              colors='#FFA54F', linewidth=4, alpha=0.2)
                     # 밴드 위에 수치 텍스트 표시
                     ax.text(lane_idx, bp * 1.05, f"{bp}bp", color='#FF7F24', 
-                            fontsize=5, ha='center', fontweight='bold', va='bottom')
+                            fontsize=4, ha='center', fontweight='bold', va='bottom')
 
             # --- 결과 출력 ---
             col_left, col_center, col_right = st.columns([1, 2, 1])
