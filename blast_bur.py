@@ -409,15 +409,15 @@ with tab3:
             ax.yaxis.set_minor_formatter(NullFormatter())
             
             ax.set_yticks(ladder_sizes) 
-            ax.set_yticklabels([f"{x}" for x in ladder_sizes], color='#FFA54F', fontsize=5)
+            ax.set_yticklabels([f"{x}" for x in ladder_sizes], color='#FFA54F', fontsize=4)
             
             # X축 라벨 설정
             lane_labels = ["L"] + [f"Lane {i+1}" for i in range(num_lanes-1)]
             ax.set_xticks(range(1, num_lanes + 1))
-            ax.set_xticklabels(lane_labels, color='#FFA54F', fontweight='bold')
+            ax.set_xticklabels(lane_labels, color='#FFA54F', fontweight='bold', fontsize=4)
             
             # 눈금 및 테두리 스타일
-            ax.tick_params(axis='y', colors='#FFA54F', length=4, labelsize=8)
+            ax.tick_params(axis='y', colors='#FFA54F', length=2, labelsize=5)
             for spine in ax.spines.values():
                 spine.set_visible(False)
             ax.grid(False)
