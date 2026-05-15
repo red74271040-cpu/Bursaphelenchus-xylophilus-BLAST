@@ -594,45 +594,232 @@ with tab5:
 
 
 with tab6:
-    st.header("Gene 조정")
-    st.write("전사 및 번역을 실시")
-    st.markdown("---") 
-
-    # 서열 입력창 (들여쓰기 없이 배치)
-    input_seq = st.text_area("분석할 DNA 서열을 입력하세요 (ATGC...)", height=200, placeholder="여기에 서열을 붙여넣으세요.", key="tab6_input")
-
-    if input_seq:
-        # 비정상 문자 제거 및 대문자 변환
+    st.header("🧬 Gene 조정 및 서열 변환")
+    st.write("전사, 번역, 역전사, 역번역 및 다양한 서열 변환을 수행합니다.")
+    st.markdown("---")
+ 
+    # ── 입력 섹션 ────────────────────────────────
+    input_seq = st.text_area(
+        "분석할 서열을 입력하세요",
+        height=150,
+        placeholder="DNA: ATGCGT... / RNA: AUGCGU... / Protein: MAST...",
+        key="tab6_input"
+    )
+ 
+    # 입력 타입 선택
+    col_type, col_codon = st.columns([1, 1])
+    with col_type:
+        seq_type = st.radio(
+            "입력 서열 타입",
+            ["DNA", "RNA", "Protein"],
+            horizontal=True
+        )
+    with col_codon:
+        codon_table = st.selectbox(
+            "코돈 테이블",
+            [
+                "1 - Standard",
+                "2 - Vertebrate Mitochondrial",
+                "5 - Invertebrate Mitochondrial",
+                "11 - Bacterial"
+            ]
+        )
+        table_num = int(codon_table.split(" ")[0])
+ 
+    st.markdown("---")
+ 
+    # ── 변환 버튼 ────────────────────────────────
+    st.subheader("변환 기능 선택")
+ 
+    b1, b2, b3, b4, b5, b6 = st.columns(6)
+    with b1:
+        btn_transcribe   = st.button("🔼 전사\nDNA→RNA",         use_container_width=True)
+    with b2:
+        btn_translate    = st.button("🔼 번역\nDNA→Protein",     use_container_width=True)
+    with b3:
+        btn_rev_trans    = st.button("🔽 역전사\nRNA→DNA",       use_container_width=True)
+    with b4:
+        btn_back_trans   = st.button("🔽 역번역\nProtein→DNA",   use_container_width=True)
+    with b5:
+        btn_rev_comp     = st.button("🔄 역상보\nRev Complement", use_container_width=True)
+    with b6:
+        btn_all          = st.button("⚡ 전체 변환",              use_container_width=True)
+ 
+    st.markdown("---")
+ 
+    # ── 변환 로직 ────────────────────────────────
+    if input_seq.strip():
         clean_seq = "".join(input_seq.split()).upper()
-        my_seq = Seq(clean_seq)
-
-        st.subheader("변환 결과")
-        
-        # 3단 컬럼 배치 (전사, 번역, 역상보)
-        res_c1, res_c2, res_c3 = st.columns(3)
-        
-        with res_c1:
-            st.info("**Transcription (DNA → RNA)**")
-            rna_seq = my_seq.transcribe()
-            st.code(str(rna_seq), language="text")
-            st.download_button("RNA 다운로드", str(rna_seq), file_name="transcription.txt")
-
-        with res_c2:
-            st.success("**Translation (DNA → Protein)**")
+ 
+        # 전사 (DNA → RNA)
+        if btn_transcribe or btn_all:
+            st.subheader("🔼 전사 결과 (DNA → RNA)")
             try:
-                # 중간 정지 코돈(*)이 나올 수 있으므로 처리
-                prot_seq = my_seq.translate()
-                st.code(str(prot_seq), language="text")
-                st.download_button("단백질 다운로드", str(prot_seq), file_name="translation.txt")
+                if seq_type != "DNA":
+                    st.warning("전사는 DNA 입력이 필요합니다.")
+                else:
+                    dna    = Seq(clean_seq)
+                    result = dna.transcribe()
+                    st.success(f"길이: {len(result)} nt")
+                    st.code(str(result), language="text")
+                    st.download_button(
+                        "📥 RNA 서열 다운로드",
+                        data=str(result),
+                        file_name="transcription_rna.txt",
+                        key="dl_transcribe"
+                    )
             except Exception as e:
-                st.error("번역 실패: 서열 길이를 확인하세요 (3의 배수).")
-
-        with res_c3:
-            st.warning("🔄 **Reverse Complement**")
-            rev_seq = my_seq.reverse_complement()
-            st.code(str(rev_seq), language="text")
-            st.download_button("역상보 서열 다운로드", str(rev_seq), file_name="rev_complement.txt")
-
+                st.error(f"전사 실패: {e}")
+ 
+        # 번역 (DNA → Protein)
+        if btn_translate or btn_all:
+            st.subheader("🔼 번역 결과 (DNA → Protein)")
+            try:
+                if seq_type != "DNA":
+                    st.warning("번역은 DNA 입력이 필요합니다.")
+                else:
+                    dna    = Seq(clean_seq)
+                    result = dna.translate(table=table_num, to_stop=True)
+                    st.success(f"길이: {len(result)} aa")
+                    st.code(str(result), language="text")
+ 
+                    # 정지코돈 포함 버전도 표시
+                    result_full = dna.translate(table=table_num)
+                    with st.expander("정지코돈(*) 포함 버전 보기"):
+                        st.code(str(result_full), language="text")
+ 
+                    st.download_button(
+                        "📥 단백질 서열 다운로드",
+                        data=str(result),
+                        file_name="translation_protein.txt",
+                        key="dl_translate"
+                    )
+            except Exception as e:
+                st.error(f"번역 실패: 서열 길이를 확인하세요 (3의 배수). {e}")
+ 
+        # 역전사 (RNA → DNA)
+        if btn_rev_trans or btn_all:
+            st.subheader("🔽 역전사 결과 (RNA → DNA)")
+            try:
+                if seq_type == "RNA":
+                    rna    = Seq(clean_seq)
+                    result = rna.back_transcribe()
+                elif seq_type == "DNA":
+                    # DNA를 RNA로 변환 후 역전사
+                    rna    = Seq(clean_seq).transcribe()
+                    result = rna.back_transcribe()
+                    st.info("DNA 입력 → RNA 변환 후 역전사 수행")
+                else:
+                    st.warning("역전사는 RNA 또는 DNA 입력이 필요합니다.")
+                    result = None
+ 
+                if result:
+                    st.success(f"길이: {len(result)} nt")
+                    st.code(str(result), language="text")
+                    st.download_button(
+                        "📥 cDNA 서열 다운로드",
+                        data=str(result),
+                        file_name="back_transcription_cdna.txt",
+                        key="dl_rev_trans"
+                    )
+            except Exception as e:
+                st.error(f"역전사 실패: {e}")
+ 
+        # 역번역 (Protein → DNA 추정)
+        if btn_back_trans or btn_all:
+            st.subheader("🔽 역번역 결과 (Protein → 가능한 DNA 코돈)")
+            try:
+                if seq_type != "Protein":
+                    st.warning("역번역은 Protein 입력이 필요합니다.")
+                else:
+                    # BioPython 역번역 (가장 빈도 높은 코돈 사용)
+                    from Bio.SeqUtils.CodonUsage import CodonAdaptationIndex
+ 
+                    # 각 아미노산을 대표 코돈으로 변환 (Standard table 기준)
+                    codon_map = {
+                        'A': 'GCT', 'R': 'CGT', 'N': 'AAT', 'D': 'GAT',
+                        'C': 'TGT', 'Q': 'CAA', 'E': 'GAA', 'G': 'GGT',
+                        'H': 'CAT', 'I': 'ATT', 'L': 'CTG', 'K': 'AAA',
+                        'M': 'ATG', 'F': 'TTT', 'P': 'CCT', 'S': 'TCT',
+                        'T': 'ACT', 'W': 'TGG', 'Y': 'TAT', 'V': 'GTT',
+                        '*': 'TAA'
+                    }
+                    dna_result = "".join(codon_map.get(aa, 'NNN') for aa in clean_seq)
+                    result     = Seq(dna_result)
+ 
+                    st.success(f"길이: {len(result)} nt ({len(clean_seq)} aa × 3)")
+                    st.info("⚠️ 대표 코돈(most common codon) 기준으로 역번역됩니다. 실제 유전자 서열과 다를 수 있습니다.")
+                    st.code(str(result), language="text")
+                    st.download_button(
+                        "📥 역번역 DNA 다운로드",
+                        data=str(result),
+                        file_name="back_translation_dna.txt",
+                        key="dl_back_trans"
+                    )
+            except Exception as e:
+                st.error(f"역번역 실패: {e}")
+ 
+        # 역상보 (Reverse Complement)
+        if btn_rev_comp or btn_all:
+            st.subheader("🔄 역상보 서열 (Reverse Complement)")
+            try:
+                if seq_type == "Protein":
+                    st.warning("역상보는 DNA 또는 RNA 입력이 필요합니다.")
+                else:
+                    seq    = Seq(clean_seq)
+                    result = seq.reverse_complement()
+                    st.success(f"길이: {len(result)} nt")
+ 
+                    col_r1, col_r2 = st.columns(2)
+                    with col_r1:
+                        st.markdown("**원본 서열 (5'→3')**")
+                        st.code(str(seq), language="text")
+                    with col_r2:
+                        st.markdown("**역상보 서열 (5'→3')**")
+                        st.code(str(result), language="text")
+ 
+                    st.download_button(
+                        "📥 역상보 서열 다운로드",
+                        data=str(result),
+                        file_name="reverse_complement.txt",
+                        key="dl_rev_comp"
+                    )
+            except Exception as e:
+                st.error(f"역상보 실패: {e}")
+ 
+        # ── 서열 기본 정보 (항상 표시) ───────────
+        st.markdown("---")
+        st.subheader("📊 입력 서열 기본 정보")
+        info_c1, info_c2, info_c3, info_c4 = st.columns(4)
+ 
+        with info_c1:
+            st.metric("서열 길이", f"{len(clean_seq)} {'aa' if seq_type == 'Protein' else 'nt'}")
+        with info_c2:
+            if seq_type != "Protein":
+                gc = (clean_seq.count('G') + clean_seq.count('C')) / len(clean_seq) * 100 if clean_seq else 0
+                st.metric("GC 함량", f"{gc:.1f}%")
+            else:
+                st.metric("아미노산 수", f"{len(clean_seq)} aa")
+        with info_c3:
+            if seq_type != "Protein":
+                st.metric("A/T/G/C",
+                    f"{clean_seq.count('A')}/{clean_seq.count('T')}/{clean_seq.count('G')}/{clean_seq.count('C')}"
+                )
+            else:
+                stop_count = clean_seq.count('*')
+                st.metric("정지코돈(*)", stop_count)
+        with info_c4:
+            if seq_type == "DNA":
+                orf_count = clean_seq.count('ATG')
+                st.metric("ATG 개수", orf_count)
+            elif seq_type == "RNA":
+                orf_count = clean_seq.count('AUG')
+                st.metric("AUG 개수", orf_count)
+            else:
+                st.metric("서열 타입", seq_type)
+ 
+    else:
+        st.info("위 입력창에 서열을 입력하고 변환 버튼을 눌러주세요.")
      
 
 
