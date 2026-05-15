@@ -514,7 +514,7 @@ with tab4:
 
 
 
-with tab6:
+with tab5:
     st.header("Gene 조정 및 서열 변환")
     st.write("전사, 번역, 역전사, 역번역 및 다양한 서열 변환을 수행합니다.")
     st.markdown("---")
