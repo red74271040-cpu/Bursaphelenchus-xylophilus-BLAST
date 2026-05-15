@@ -394,7 +394,7 @@ with tab3:
         with st.spinner("Generating Detailed Gel..."):
             # 레인 개수 설정 (Ladder 포함 최소 5개 레인 생성)
             num_lanes = max(5, len(target_bp_list) + 1) 
-            fig, ax = plt.subplots(figsize=(num_lanes * 0.7, 4)) 
+            fig, ax = plt.subplots(figsize=(num_lanes * 0.5, 3)) 
             ax.set_facecolor('#361F00') # 사진과 같은 짙은 브라운 배경
             
             # Y축 로그 스케일 및 범위 설정
@@ -448,7 +448,9 @@ with tab3:
                             fontsize=5, ha='center', fontweight='bold', va='bottom')
 
             # --- 결과 출력 ---
-            st.pyplot(fig)
+            col_left, col_center, col_right = st.columns([1, 2, 1])
+            with col_center:
+                st.pyplot(fig, use_container_width=True)
 
             # 다운로드 버튼
             buf = io.BytesIO()
