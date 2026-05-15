@@ -394,7 +394,7 @@ with tab3:
         with st.spinner("Generating Detailed Gel..."):
             # 레인 개수 설정 (Ladder 포함 최소 5개 레인 생성)
             num_lanes = max(5, len(target_bp_list) + 1) 
-            fig, ax = plt.subplots(figsize=(num_lanes * 1.0, 6)) 
+            fig, ax = plt.subplots(figsize=(num_lanes * 1.0, 4)) 
             ax.set_facecolor('#361F00') # 사진과 같은 짙은 브라운 배경
             
             # Y축 로그 스케일 및 범위 설정
@@ -409,7 +409,7 @@ with tab3:
             ax.yaxis.set_minor_formatter(NullFormatter())
             
             ax.set_yticks(ladder_sizes) 
-            ax.set_yticklabels([f"{x}" for x in ladder_sizes], color='#FFA54F', fontsize=6)
+            ax.set_yticklabels([f"{x}" for x in ladder_sizes], color='#FFA54F', fontsize=5)
             
             # X축 라벨 설정
             lane_labels = ["L"] + [f"Lane {i+1}" for i in range(num_lanes-1)]
@@ -445,7 +445,7 @@ with tab3:
                               colors='#FFA54F', linewidth=10, alpha=0.2)
                     # 밴드 위에 수치 텍스트 표시
                     ax.text(lane_idx, bp * 1.05, f"{bp}bp", color='#FF7F24', 
-                            fontsize=7, ha='center', fontweight='bold', va='bottom')
+                            fontsize=5, ha='center', fontweight='bold', va='bottom')
 
             # --- 결과 출력 ---
             st.pyplot(fig)
