@@ -110,7 +110,6 @@ tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
     "RNAi디자인 및 off-target",
     "가상 gel imagine 생성",
     "농도 계산기",
-    "Gene visualization",
     "Gene조정 및 파일형식 변환"
 ])
 
@@ -514,286 +513,9 @@ with tab4:
         st.warning("농도를 입력해 주세요.")
 
 
-with tab5:
-    st.header("Gene Visualization & 3D Structure")
-    st.info("PDB ID 조회, AlphaFold 구조 검색, 또는 Tab1 결과에서 직접 구조를 확인합니다.")
-
-    # ── 3D 렌더링 함수 ────────────────────────────
-    def render_3d_structure(pdb_data):
-        view = py3Dmol.view(width=800, height=500)
-        view.addModel(pdb_data, 'pdb')
-        view.setStyle({'cartoon': {'color': 'spectrum'}})
-        view.zoomTo()
-        showmol(view, height=500, width=800)
-
-    # ── 모드 선택 ─────────────────────────────────
-    input_mode = st.radio(
-        "분석 방식 선택",
-        [
-            "PDB ID로 조회",
-            "AlphaFold DB 검색 (단백질 이름)",
-            "Tab1 결과에서 구조 확인"
-        ],
-        horizontal=True
-    )
-    st.markdown("---")
-
-    # ────────────────────────────────────────────
-    # 모드 1: PDB ID 직접 조회
-    # ────────────────────────────────────────────
-    if input_mode == "PDB ID로 조회":
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            target_pdb = st.text_input(
-                "PDB ID 입력", value="4W5N",
-                help="예: 4W5N(Argonaute), 1TUP(p53)"
-            ).upper()
-            search_btn = st.button("구조 불러오기", use_container_width=True)
-
-        if search_btn and target_pdb:
-            with st.spinner("PDB 데이터 로드 중..."):
-                try:
-                    url      = f"https://files.rcsb.org/view/{target_pdb}.pdb"
-                    response = requests.get(url, timeout=10)
-                    if response.status_code == 200:
-                        st.success(f"PDB 로드 완료: {target_pdb}")
-                        render_3d_structure(response.text)
-                        st.download_button(
-                            "📥 PDB 파일 다운로드",
-                            data=response.text,
-                            file_name=f"{target_pdb}.pdb",
-                            mime="text/plain"
-                        )
-                    else:
-                        st.error("해당 PDB ID를 찾을 수 없습니다.")
-                        st.markdown(f"[🔍 RCSB PDB에서 검색](https://www.rcsb.org/search?q={target_pdb})")
-                except Exception as e:
-                    st.error(f"오류 발생: {e}")
-
-    # ────────────────────────────────────────────
-    # 모드 2: AlphaFold DB 검색
-    # ────────────────────────────────────────────
-    elif input_mode == "AlphaFold DB 검색 (단백질 이름)":
-        st.subheader("🔷 AlphaFold DB 구조 검색")
-        st.info("UniProt Accession 또는 단백질 이름으로 AlphaFold 예측 구조를 검색합니다.")
-
-        col_a1, col_a2 = st.columns([2, 1])
-        with col_a1:
-            search_query = st.text_input(
-                "UniProt Accession 또는 단백질 이름 입력",
-                placeholder="예: P00520 또는 argonaute Bursaphelenchus"
-            )
-        with col_a2:
-            af_search_btn = st.button("🔍 AlphaFold 구조 검색", use_container_width=True)
-
-        if af_search_btn and search_query:
-            with st.spinner("UniProt 검색 중..."):
-                try:
-                    # UniProt REST API로 검색
-                    uniprot_url = (
-                        f"https://rest.uniprot.org/uniprotkb/search"
-                        f"?query={search_query}&format=json&size=5"
-                    )
-                    r = requests.get(uniprot_url, timeout=10)
-
-                    if r.status_code == 200:
-                        data    = r.json()
-                        results = data.get("results", [])
-
-                        if results:
-                            st.success(f"{len(results)}개 결과 발견")
-
-                            for entry in results[:3]:
-                                accession  = entry.get("primaryAccession", "")
-                                entry_name = entry.get("uniProtkbId", "")
-                                protein_name = (
-                                    entry.get("proteinDescription", {})
-                                    .get("recommendedName", {})
-                                    .get("fullName", {})
-                                    .get("value", "Unknown")
-                                )
-                                organism = (
-                                    entry.get("organism", {})
-                                    .get("scientificName", "Unknown")
-                                )
-
-                                with st.expander(
-                                    f"📄 {accession} — {protein_name} ({organism})",
-                                    expanded=True
-                                ):
-                                    col_u1, col_u2 = st.columns(2)
-                                    with col_u1:
-                                        st.markdown(f"**Accession:** `{accession}`")
-                                        st.markdown(f"**Entry:** `{entry_name}`")
-                                        st.markdown(f"**Protein:** {protein_name}")
-                                        st.markdown(f"**Organism:** {organism}")
-                                    with col_u2:
-                                        st.markdown(
-                                            f"[🔗 UniProt 페이지](https://www.uniprot.org/uniprot/{accession})"
-                                        )
-                                        st.markdown(
-                                            f"[🔷 AlphaFold 구조](https://alphafold.ebi.ac.uk/entry/{accession})"
-                                        )
-
-                                    # AlphaFold PDB 직접 로드 시도
-                                    af_pdb_url = (
-                                        f"https://alphafold.ebi.ac.uk/files/"
-                                        f"AF-{accession}-F1-model_v4.pdb"
-                                    )
-                                    af_r = requests.get(af_pdb_url, timeout=10)
-
-                                    if af_r.status_code == 200:
-                                        st.success("AlphaFold 구조 로드 완료!")
-                                        render_3d_structure(af_r.text)
-                                        st.download_button(
-                                            f"📥 AlphaFold PDB 다운로드 ({accession})",
-                                            data=af_r.text,
-                                            file_name=f"AF_{accession}.pdb",
-                                            mime="text/plain",
-                                            key=f"dl_af_{accession}"
-                                        )
-                                    else:
-                                        st.warning(
-                                            "AlphaFold 예측 구조가 없습니다. "
-                                            "위 AlphaFold 링크에서 직접 확인해보세요."
-                                        )
-                        else:
-                            st.warning("검색 결과가 없습니다.")
-                            st.markdown(
-                                f"[🔍 UniProt에서 직접 검색]"
-                                f"(https://www.uniprot.org/uniprot/?query={search_query})"
-                            )
-                    else:
-                        st.error(f"UniProt 검색 실패: {r.status_code}")
-
-                except Exception as e:
-                    st.error(f"검색 실패: {e}")
-
-    # ────────────────────────────────────────────
-    # 모드 3: Tab1 결과에서 구조 확인
-    # ────────────────────────────────────────────
-    else:
-        st.subheader("🧬 Tab1 BLAST 결과 기반 구조 검색")
-
-        if not st.session_state.get("blast_done"):
-            st.warning("먼저 Tab1에서 BLAST 분석을 실행해 주세요.")
-        else:
-            df_ref  = st.session_state["blast_df"]
-            options = [
-                f"{row['Protein Name']}  [{row['Locus ID']}]"
-                for _, row in df_ref.iterrows()
-            ]
-            selected = st.selectbox("Tab1 결과에서 유전자 선택", options)
-
-            # 선택된 단백질 이름 추출
-            match     = re.search(r'^(.+?)\s+\[', selected)
-            prot_name = match.group(1).strip() if match else ""
-            locus_match = re.search(r'\[(.+?)\]', selected)
-            locus_id  = locus_match.group(1) if locus_match else ""
-
-            st.caption(f"선택된 단백질: `{prot_name}` | Locus: `{locus_id}`")
-
-            # 단백질 이름 정제
-            clean_name = (
-                prot_name
-                .replace("...", "")
-                .replace("%0A", "")
-                .replace("Hypothetical Protein", "")
-                .strip()
-            )
-
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                struct_btn = st.button(
-                    "🔷 AlphaFold/UniProt 구조 검색",
-                    use_container_width=True
-                )
-            with col_b2:
-                wbps_btn = st.button(
-                    "🌐 WormBase 구조 페이지",
-                    use_container_width=True
-                )
-
-            if struct_btn:
-                if not clean_name:
-                    st.warning("단백질 이름이 없어 검색이 어렵습니다. AlphaFold DB 검색 모드를 이용해 주세요.")
-                else:
-                    search_q = f"{clean_name} Bursaphelenchus xylophilus"
-                    with st.spinner(f"'{clean_name}' UniProt 검색 중..."):
-                        try:
-                            uniprot_url = (
-                                f"https://rest.uniprot.org/uniprotkb/search"
-                                f"?query={search_q}&format=json&size=3"
-                            )
-                            r = requests.get(uniprot_url, timeout=10)
-
-                            if r.status_code == 200:
-                                results = r.json().get("results", [])
-
-                                if results:
-                                    st.success(f"{len(results)}개 결과 발견")
-                                    for entry in results[:2]:
-                                        accession = entry.get("primaryAccession", "")
-                                        protein_name = (
-                                            entry.get("proteinDescription", {})
-                                            .get("recommendedName", {})
-                                            .get("fullName", {})
-                                            .get("value", "Unknown")
-                                        )
-                                        organism = (
-                                            entry.get("organism", {})
-                                            .get("scientificName", "Unknown")
-                                        )
-
-                                        with st.expander(
-                                            f"📄 {accession} — {protein_name}",
-                                            expanded=True
-                                        ):
-                                            st.markdown(f"**Accession:** `{accession}` | **Organism:** {organism}")
-                                            st.markdown(
-                                                f"[🔗 UniProt](https://www.uniprot.org/uniprot/{accession}) | "
-                                                f"[🔷 AlphaFold](https://alphafold.ebi.ac.uk/entry/{accession})"
-                                            )
-
-                                            # AlphaFold PDB 로드
-                                            af_url = (
-                                                f"https://alphafold.ebi.ac.uk/files/"
-                                                f"AF-{accession}-F1-model_v4.pdb"
-                                            )
-                                            af_r = requests.get(af_url, timeout=10)
-                                            if af_r.status_code == 200:
-                                                st.success("AlphaFold 구조 로드 완료!")
-                                                render_3d_structure(af_r.text)
-                                                st.download_button(
-                                                    f"📥 PDB 다운로드 ({accession})",
-                                                    data=af_r.text,
-                                                    file_name=f"AF_{accession}_{locus_id}.pdb",
-                                                    mime="text/plain",
-                                                    key=f"dl_tab1_{accession}"
-                                                )
-                                            else:
-                                                st.warning("AlphaFold 예측 구조 없음 — 위 링크에서 직접 확인하세요.")
-                                else:
-                                    st.warning("UniProt에서 결과를 찾지 못했습니다.")
-                                    st.markdown(
-                                        f"[🔍 UniProt 직접 검색]"
-                                        f"(https://www.uniprot.org/uniprot/?query={clean_name})"
-                                    )
-                            else:
-                                st.error(f"UniProt 검색 실패: {r.status_code}")
-
-                        except Exception as e:
-                            st.error(f"구조 검색 실패: {e}")
-
-            if wbps_btn:
-                base_id = locus_id.split(".")[0]
-                st.markdown(
-                    f"[🌐 WormBase ParaSite — {base_id}]"
-                    f"(https://parasite.wormbase.org/Multi/Search/Results?q={base_id})"
-                )
 
 with tab6:
-    st.header("🧬 Gene 조정 및 서열 변환")
+    st.header("Gene 조정 및 서열 변환")
     st.write("전사, 번역, 역전사, 역번역 및 다양한 서열 변환을 수행합니다.")
     st.markdown("---")
  
@@ -832,17 +554,17 @@ with tab6:
  
     b1, b2, b3, b4, b5, b6 = st.columns(6)
     with b1:
-        btn_transcribe   = st.button("🔼 전사\nDNA→RNA",         use_container_width=True)
+        btn_transcribe   = st.button(" 전사\nDNA→RNA",         use_container_width=True)
     with b2:
-        btn_translate    = st.button("🔼 번역\nDNA→Protein",     use_container_width=True)
+        btn_translate    = st.button(" 번역\nDNA→Protein",     use_container_width=True)
     with b3:
-        btn_rev_trans    = st.button("🔽 역전사\nRNA→DNA",       use_container_width=True)
+        btn_rev_trans    = st.button(" 역전사\nRNA→DNA",       use_container_width=True)
     with b4:
-        btn_back_trans   = st.button("🔽 역번역\nProtein→DNA",   use_container_width=True)
+        btn_back_trans   = st.button(" 역번역\nProtein→DNA",   use_container_width=True)
     with b5:
-        btn_rev_comp     = st.button("🔄 역상보\nRev Complement", use_container_width=True)
+        btn_rev_comp     = st.button(" 역상보\nRev Complement", use_container_width=True)
     with b6:
-        btn_all          = st.button("⚡ 전체 변환",              use_container_width=True)
+        btn_all          = st.button(" 전체 변환",              use_container_width=True)
  
     st.markdown("---")
  
@@ -852,7 +574,7 @@ with tab6:
  
         # 전사 (DNA → RNA)
         if btn_transcribe or btn_all:
-            st.subheader("🔼 전사 결과 (DNA → RNA)")
+            st.subheader(" 전사 결과 (DNA → RNA)")
             try:
                 if seq_type != "DNA":
                     st.warning("전사는 DNA 입력이 필요합니다.")
@@ -862,7 +584,7 @@ with tab6:
                     st.success(f"길이: {len(result)} nt")
                     st.code(str(result), language="text")
                     st.download_button(
-                        "📥 RNA 서열 다운로드",
+                        " RNA 서열 다운로드",
                         data=str(result),
                         file_name="transcription_rna.txt",
                         key="dl_transcribe"
@@ -872,7 +594,7 @@ with tab6:
  
         # 번역 (DNA → Protein)
         if btn_translate or btn_all:
-            st.subheader("🔼 번역 결과 (DNA → Protein)")
+            st.subheader(" 번역 결과 (DNA → Protein)")
             try:
                 if seq_type != "DNA":
                     st.warning("번역은 DNA 입력이 필요합니다.")
@@ -888,7 +610,7 @@ with tab6:
                         st.code(str(result_full), language="text")
  
                     st.download_button(
-                        "📥 단백질 서열 다운로드",
+                        " 단백질 서열 다운로드",
                         data=str(result),
                         file_name="translation_protein.txt",
                         key="dl_translate"
@@ -898,7 +620,7 @@ with tab6:
  
         # 역전사 (RNA → DNA)
         if btn_rev_trans or btn_all:
-            st.subheader("🔽 역전사 결과 (RNA → DNA)")
+            st.subheader(" 역전사 결과 (RNA → DNA)")
             try:
                 if seq_type == "RNA":
                     rna    = Seq(clean_seq)
@@ -916,7 +638,7 @@ with tab6:
                     st.success(f"길이: {len(result)} nt")
                     st.code(str(result), language="text")
                     st.download_button(
-                        "📥 cDNA 서열 다운로드",
+                        " cDNA 서열 다운로드",
                         data=str(result),
                         file_name="back_transcription_cdna.txt",
                         key="dl_rev_trans"
@@ -926,7 +648,7 @@ with tab6:
  
         # 역번역 (Protein → DNA 추정)
         if btn_back_trans or btn_all:
-            st.subheader("🔽 역번역 결과 (Protein → 가능한 DNA 코돈)")
+            st.subheader(" 역번역 결과 (Protein → 가능한 DNA 코돈)")
             try:
                 if seq_type != "Protein":
                     st.warning("역번역은 Protein 입력이 필요합니다.")
@@ -947,10 +669,10 @@ with tab6:
                     result     = Seq(dna_result)
  
                     st.success(f"길이: {len(result)} nt ({len(clean_seq)} aa × 3)")
-                    st.info("⚠️ 대표 코돈(most common codon) 기준으로 역번역됩니다. 실제 유전자 서열과 다를 수 있습니다.")
+                    st.info(" 대표 코돈(most common codon) 기준으로 역번역됩니다. 실제 유전자 서열과 다를 수 있습니다.")
                     st.code(str(result), language="text")
                     st.download_button(
-                        "📥 역번역 DNA 다운로드",
+                        " 역번역 DNA 다운로드",
                         data=str(result),
                         file_name="back_translation_dna.txt",
                         key="dl_back_trans"
@@ -960,7 +682,7 @@ with tab6:
  
         # 역상보 (Reverse Complement)
         if btn_rev_comp or btn_all:
-            st.subheader("🔄 역상보 서열 (Reverse Complement)")
+            st.subheader(" 역상보 서열 (Reverse Complement)")
             try:
                 if seq_type == "Protein":
                     st.warning("역상보는 DNA 또는 RNA 입력이 필요합니다.")
@@ -978,7 +700,7 @@ with tab6:
                         st.code(str(result), language="text")
  
                     st.download_button(
-                        "📥 역상보 서열 다운로드",
+                        " 역상보 서열 다운로드",
                         data=str(result),
                         file_name="reverse_complement.txt",
                         key="dl_rev_comp"
@@ -988,7 +710,7 @@ with tab6:
  
         # ── 서열 기본 정보 (항상 표시) ───────────
         st.markdown("---")
-        st.subheader("📊 입력 서열 기본 정보")
+        st.subheader(" 입력 서열 기본 정보")
         info_c1, info_c2, info_c3, info_c4 = st.columns(4)
  
         with info_c1:
