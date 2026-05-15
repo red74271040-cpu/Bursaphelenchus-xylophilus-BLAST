@@ -105,7 +105,7 @@ with st.sidebar:
 
 #메인 타이틀 디자인
 st.title("Bursaphelenchus xylophilus genetic analysis tool")
-tab1, tab2, tab3, tab4, tab5, tab6,  = st.tabs([
+tab1, tab2, tab3, tab4, tab5, = st.tabs([
     "타겟 유전자 정보 조회",
     "RNAi디자인 및 off-target",
     "가상 gel imagine 생성",
