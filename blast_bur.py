@@ -394,7 +394,7 @@ with tab3:
         with st.spinner("Generating Detailed Gel..."):
             # 레인 개수 설정 (Ladder 포함 최소 5개 레인 생성)
             num_lanes = max(5, len(target_bp_list) + 1) 
-            fig, ax = plt.subplots(figsize=(num_lanes * 1.0, 4)) 
+            fig, ax = plt.subplots(figsize=(num_lanes * 0.7, 4)) 
             ax.set_facecolor('#361F00') # 사진과 같은 짙은 브라운 배경
             
             # Y축 로그 스케일 및 범위 설정
