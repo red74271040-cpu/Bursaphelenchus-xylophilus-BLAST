@@ -950,6 +950,8 @@ with tab2:
                         file_name="offtarget_summary.csv",
                         mime="text/csv"
                     )
+                    
+with tab3:                    
     raw_bp_inputs = st.text_input(
         "Enter Band Sizes for each Lane (e.g., 500, 1200, 800)", 
         value="500, 1200, 800",
