@@ -459,38 +459,155 @@ with tab2:
                         st.error(f"분석 실패: {e}")
 
     # ══════════════════════════════════════════════
+  
+with tab3:
+    st.header("Multi-Lane Virtual Gel Simulator")
+    st.info("각 bp 값을 쉼표(,)로 구분해 입력하면 순서대로 Lane 1, 2, 3...에 배치됩니다.")
+
+    # 1. 입력 섹션# ══════════════════════════════════════════════
     # MODE 1: Off-target Prediction Mode
     # ══════════════════════════════════════════════
     else:
         st.subheader("🎯 Off-target Prediction Mode")
-        st.info("보유한 siRNA 서열을 입력하면 전체 게놈에서 off-target을 예측합니다.")
+        st.info("보유한 siRNA 서열을 입력하고 검색할 DB를 선택하면 off-target을 예측합니다.")
 
-        # siRNA 서열 입력 (여러 개 가능)
+        # ── 1. siRNA 서열 입력 ────────────────────
+        st.markdown("### 1. siRNA 서열 입력")
+        st.caption("여러 개는 줄바꿈으로 구분, FASTA 형식도 가능합니다.")
         sirna_input = st.text_area(
-            "siRNA 서열 입력 (여러 개는 줄바꿈으로 구분, FASTA 형식도 가능)",
+            "siRNA 서열 입력",
             height=150,
-            placeholder="GGGATGGCTCAAAGGCGTAGT\nATCGATCGATCGATCGATCGA\n\n또는\n>siRNA_1\nGGGATGGCTCAAAGGCGTAGT"
-        )
-        mismatches_allowed = st.slider(
-            "허용 미스매치 수 (이하를 위험 off-target으로 분류)",
-            0, 5, 2
+            placeholder="순수 서열:\nGGGATGGCTCAAAGGCGTAGT\nATCGATCGATCGATCGATCGA\n\nFASTA 형식:\n>siRNA_1\nGGGATGGCTCAAAGGCGTAGT"
         )
 
+        # ── 2. BLAST 파라미터 설정 ────────────────
+        st.markdown("### 2. BLAST 파라미터 설정")
+
+        col_b1, col_b2, col_b3 = st.columns(3)
+        with col_b1:
+            mismatches_allowed = st.slider(
+                "위험 off-target 기준 미스매치 수",
+                min_value=0, max_value=5, value=2,
+                help="이 수 이하의 미스매치를 가진 히트를 위험 off-target으로 분류합니다.\n"
+                     "0: 완벽 일치만 위험\n"
+                     "2: 2개 이하 미스매치 위험 (권장)\n"
+                     "5: 5개 이하 미스매치 위험 (매우 엄격)"
+            )
+        with col_b2:
+            evalue_threshold = st.selectbox(
+                "E-value 임계값",
+                options=["1", "10", "100", "1000"],
+                index=1,
+                help="높을수록 더 많은 히트 포함\n"
+                     "1: 보통\n"
+                     "10: 권장 (off-target용)\n"
+                     "100~1000: 매우 느슨함"
+            )
+        with col_b3:
+            word_size = st.selectbox(
+                "Word Size (검색 민감도)",
+                options=["7", "8", "11"],
+                index=0,
+                help="작을수록 더 민감하게 검색\n"
+                     "7: 권장 (21nt siRNA용)\n"
+                     "8: 보통\n"
+                     "11: 기본값 (긴 서열용)"
+            )
+
+        # ── 3. DB 선택 ────────────────────────────
+        st.markdown("### 3. 검색할 DB 선택")
+        st.caption("비표적 생물 DB 파일(.nhr)이 있어야 선택 가능합니다.")
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # 사용 가능한 DB 자동 감지
+        db_candidates = {
+            "🪱 소나무재선충 (주타겟)": "pwn_blast_db/pwn_blast_db",
+            "🐝 꿀벌 (Apis mellifera)": "honeybee_db/honeybee_db",
+            "🌲 소나무 (Pinus)":        "pine_db/pine_db",
+            "👤 사람 (Homo sapiens)":   "human_db/human_db",
+            "🪱 C. elegans":            "celegans_db/celegans_db",
+        }
+
+        available_dbs  = {}
+        unavailable_dbs = []
+
+        for name, path in db_candidates.items():
+            full_path = os.path.join(current_dir, path)
+            if os.path.exists(full_path + ".nhr"):
+                available_dbs[name] = full_path
+            else:
+                unavailable_dbs.append(name)
+
+        # 사용 가능한 DB 표시
+        if available_dbs:
+            selected_dbs = st.multiselect(
+                "검색할 DB 선택 (다중 선택 가능)",
+                list(available_dbs.keys()),
+                default=list(available_dbs.keys()),
+                help="체크된 DB 전부에 대해 off-target을 검색합니다."
+            )
+        else:
+            st.error("사용 가능한 DB가 없습니다. DB 파일을 업로드해 주세요.")
+            selected_dbs = []
+
+        # 없는 DB 안내
+        if unavailable_dbs:
+            with st.expander("❌ DB 파일 없음 (클릭하여 추가 방법 확인)"):
+                st.markdown("아래 DB 파일이 없습니다. NCBI에서 CDS를 받아 makeblastdb로 생성하세요:")
+                for name in unavailable_dbs:
+                    st.markdown(f"- {name}")
+                st.code("""
+# NCBI에서 CDS 다운로드 후 DB 생성 예시
+makeblastdb -in honeybee_cds.fna -dbtype nucl -out honeybee_db/honeybee_db
+makeblastdb -in human_cds.fna    -dbtype nucl -out human_db/human_db
+makeblastdb -in pine_cds.fna     -dbtype nucl -out pine_db/pine_db
+                """, language="bash")
+
+        # ── 4. 커스텀 DB 업로드 ───────────────────
+        st.markdown("### 4. 커스텀 DB 추가 (선택사항)")
+        st.caption("위 목록에 없는 생물의 DB 경로를 직접 입력할 수 있습니다.")
+
+        custom_db_col1, custom_db_col2 = st.columns([2, 1])
+        with custom_db_col1:
+            custom_db_path = st.text_input(
+                "커스텀 DB 경로",
+                placeholder="예: custom_db/myorganism_db"
+            )
+        with custom_db_col2:
+            custom_db_name = st.text_input(
+                "DB 이름",
+                placeholder="예: 나방 (Bombyx mori)"
+            )
+
+        if custom_db_path and custom_db_name:
+            full_custom = os.path.join(current_dir, custom_db_path)
+            if os.path.exists(full_custom + ".nhr"):
+                available_dbs[f"⚙️ {custom_db_name}"] = full_custom
+                st.success(f"커스텀 DB 추가됨: {custom_db_name}")
+            else:
+                st.error("해당 경로에 DB 파일이 없습니다.")
+
+        st.markdown("---")
+
+        # ── 5. 실행 버튼 ──────────────────────────
         offtarget_run_btn = st.button(
             "🎯 Off-target 예측 시작",
-            use_container_width=True, type="primary"
+            use_container_width=True,
+            type="primary"
         )
 
         if offtarget_run_btn:
             if not sirna_input.strip():
                 st.error("siRNA 서열을 입력해 주세요.")
+            elif not selected_dbs:
+                st.error("검색할 DB를 선택해 주세요.")
             else:
-                # 서열 파싱 (FASTA 또는 순수 서열 둘 다)
-                lines   = sirna_input.strip().split("\n")
+                # 서열 파싱
+                lines = sirna_input.strip().split("\n")
                 sirnas_to_check = []
 
                 if any(l.startswith(">") for l in lines):
-                    # FASTA 형식
                     name, seq = "", ""
                     for l in lines:
                         if l.startswith(">"):
@@ -502,94 +619,207 @@ with tab2:
                     if seq:
                         sirnas_to_check.append({"name": name, "sequence": seq.upper()})
                 else:
-                    # 순수 서열 (줄마다 하나)
                     for i, l in enumerate(lines):
                         l = l.strip()
                         if l:
                             sirnas_to_check.append({"name": f"siRNA_{i+1}", "sequence": l.upper()})
 
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                db_path     = os.path.join(current_dir, "pwn_blast_db", "pwn_blast_db")
-                mapping     = build_id_mapping_table()
+                # ── 6. 결과 출력 ──────────────────
+                st.markdown("---")
+                st.subheader("📊 분석 결과")
 
-                all_results = []
+                # 전체 요약을 담을 리스트
+                summary_all = []
 
-                with st.spinner(f"{len(sirnas_to_check)}개 siRNA off-target 분석 중..."):
-                    for s in sirnas_to_check:
-                        st.markdown(f"#### {s['name']} — `{s['sequence']}`")
+                for s in sirnas_to_check:
+                    st.markdown(f"## 🧬 {s['name']} — `{s['sequence']}`")
 
-                        # 효율 정보도 같이 표시
-                        score, detail = calculate_efficiency(s["sequence"])
-                        gc = calc_gc_content(s["sequence"])
-                        col_i1, col_i2 = st.columns(2)
-                        with col_i1:
+                    # 효율 정보
+                    score, detail = calculate_efficiency(s["sequence"])
+                    gc = calc_gc_content(s["sequence"])
+                    _, s_e, as_e = check_strand_selection(s["sequence"])
+
+                    with st.expander("📈 siRNA 효율 정보", expanded=True):
+                        col_e1, col_e2, col_e3, col_e4 = st.columns(4)
+                        with col_e1:
                             st.metric("효율 점수", f"{score} / 100")
-                            st.markdown(f"GC 함량: {gc}%")
-                        with col_i2:
-                            for k, v in detail.items():
-                                st.markdown(f"- **{k}:** {v}")
+                        with col_e2:
+                            st.metric("GC 함량", f"{gc}%")
+                        with col_e3:
+                            st.metric("Sense ΔG", f"{s_e} kcal/mol")
+                        with col_e4:
+                            st.metric("Antisense ΔG", f"{as_e} kcal/mol")
 
-                        # BLAST off-target 검색
+                        col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+                        with col_r1:
+                            st.markdown(f"GC 규칙: {detail['GC 함량']}")
+                        with col_r2:
+                            st.markdown(f"가닥 선택: {detail['가닥 선택']}")
+                        with col_r3:
+                            st.markdown(f"말단 규칙: {detail['말단 규칙']}")
+                        with col_r4:
+                            st.markdown(f"호모폴리머: {detail['호모폴리머']}")
+
+                    # Antisense 서열
+                    st.markdown(f"**Antisense (3'→5'):** `{get_antisense(s['sequence'])}`")
+
+                    # DB별 off-target 검색
+                    sirna_summary = {
+                        "siRNA": s["name"],
+                        "서열": s["sequence"],
+                        "효율 점수": score,
+                        "GC 함량(%)": gc,
+                    }
+
+                    total_danger  = 0
+                    total_offtarget = 0
+
+                    for db_name in selected_dbs:
+                        db_path = available_dbs[db_name]
+                        st.markdown(f"#### {db_name}")
+
                         try:
-                            df_off = run_blast(s["sequence"], db_path, current_dir)
+                            # BLAST 실행
+                            tmp_fa  = os.path.join(current_dir, "sirna_query_tmp.fa")
+                            tmp_out = os.path.join(current_dir, "sirna_blast_tmp.csv")
 
-                            if not df_off.empty:
-                                df_off["Protein Name"] = df_off["Target"].apply(
-                                    lambda x: get_protein_name(x, mapping)
-                                )
+                            with open(tmp_fa, "w") as f:
+                                f.write(f">query\n{s['sequence']}\n")
+
+                            subprocess.run([
+                                "blastn",
+                                "-query",   tmp_fa,
+                                "-db",      db_path,
+                                "-out",     tmp_out,
+                                "-outfmt",  "10 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                                "-task",    "blastn-short",
+                                "-evalue",  evalue_threshold,
+                                "-word_size", word_size
+                            ], check=True)
+
+                            if os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 0:
+                                df_off = pd.read_csv(tmp_out, names=[
+                                    "Query", "Target", "Identity(%)", "Length",
+                                    "Mismatch", "Gap", "Q_Start", "Q_End",
+                                    "S_Start", "S_End", "E-value", "BitScore"
+                                ])
+
+                                # 단백질 이름 매핑 (재선충 DB만)
+                                if "재선충" in db_name:
+                                    mapping = build_id_mapping_table()
+                                    df_off["Protein Name"] = df_off["Target"].apply(
+                                        lambda x: get_protein_name(x, mapping)
+                                    )
+                                else:
+                                    df_off["Protein Name"] = "-"
+
+                                # 위험도 분류
                                 df_off["위험도"] = df_off["Mismatch"].apply(
                                     lambda x: "⚠️ 위험" if int(x) <= mismatches_allowed else "✅ 낮음"
                                 )
-                                danger_count = len(df_off[df_off["위험도"] == "⚠️ 위험"])
+
+                                # seed region 미스매치 경고
+                                # seed region = siRNA 2~8번째 위치
+                                df_off["Seed 위험"] = df_off.apply(
+                                    lambda row: "🔴 Seed 위험" if (
+                                        int(row["Mismatch"]) <= mismatches_allowed and
+                                        int(row["Q_Start"]) <= 2 and int(row["Q_End"]) >= 8
+                                    ) else "-",
+                                    axis=1
+                                )
+
+                                danger_df    = df_off[df_off["위험도"] == "⚠️ 위험"]
+                                danger_count = len(danger_df)
+                                total_danger    += danger_count
+                                total_offtarget += len(df_off)
 
                                 if danger_count > 0:
-                                    st.warning(f"위험 off-target {danger_count}개 발견")
+                                    st.warning(f"위험 off-target {danger_count}개 / 전체 히트 {len(df_off)}개")
                                 else:
-                                    st.success("위험 off-target 없음")
+                                    st.success(f"위험 off-target 없음 / 전체 히트 {len(df_off)}개")
+
+                                # 결과 테이블
+                                show_cols = ["Protein Name", "Target", "Identity(%)",
+                                             "Mismatch", "E-value", "BitScore", "위험도", "Seed 위험"]
+                                if "Protein Name" not in df_off.columns or df_off["Protein Name"].eq("-").all():
+                                    show_cols = ["Target", "Identity(%)", "Mismatch",
+                                                 "E-value", "BitScore", "위험도", "Seed 위험"]
 
                                 st.dataframe(
-                                    df_off[["Protein Name","Target","Identity(%)","Mismatch","E-value","위험도"]],
+                                    df_off[show_cols].sort_values("Mismatch"),
                                     use_container_width=True
                                 )
-                                all_results.append({
-                                    "siRNA": s["name"],
-                                    "서열": s["sequence"],
-                                    "효율 점수": score,
-                                    "위험 off-target 수": danger_count,
-                                    "전체 off-target 수": len(df_off)
-                                })
+
+                                # 위험 히트 강조
+                                if not danger_df.empty:
+                                    with st.expander(f"⚠️ 위험 off-target 상세 ({db_name})", expanded=True):
+                                        st.dataframe(
+                                            danger_df[show_cols],
+                                            use_container_width=True
+                                        )
+
+                                # DB별 결과 저장
+                                sirna_summary[f"{db_name} 위험"] = danger_count
+                                sirna_summary[f"{db_name} 전체"] = len(df_off)
+
                             else:
-                                st.success("Off-target 없음!")
-                                all_results.append({
-                                    "siRNA": s["name"],
-                                    "서열": s["sequence"],
-                                    "효율 점수": score,
-                                    "위험 off-target 수": 0,
-                                    "전체 off-target 수": 0
-                                })
+                                st.success(f"off-target 없음")
+                                sirna_summary[f"{db_name} 위험"] = 0
+                                sirna_summary[f"{db_name} 전체"] = 0
 
                         except Exception as e:
-                            st.error(f"{s['name']} 분석 실패: {e}")
+                            st.error(f"{db_name} 검색 실패: {e}")
 
-                        st.markdown("---")
+                    # siRNA 종합 판정
+                    st.markdown("#### 🏁 종합 판정")
+                    if total_danger == 0:
+                        st.success(
+                            f"✅ 모든 DB에서 위험 off-target 없음 "
+                            f"— 안전한 후보 (전체 히트 {total_offtarget}개)"
+                        )
+                    elif total_danger <= 2:
+                        st.warning(
+                            f"⚠️ 주의 필요 — 위험 off-target {total_danger}개 발견 "
+                            f"(전체 히트 {total_offtarget}개)"
+                        )
+                    else:
+                        st.error(
+                            f"❌ 위험 — 다수의 off-target {total_danger}개 발견 "
+                            f"(전체 히트 {total_offtarget}개). 다른 siRNA 후보 검토 권장"
+                        )
 
-                # 전체 요약
-                if all_results:
-                    st.subheader("📊 전체 분석 요약")
-                    df_summary = pd.DataFrame(all_results)
+                    sirna_summary["총 위험 off-target"] = total_danger
+                    sirna_summary["총 히트 수"]         = total_offtarget
+                    summary_all.append(sirna_summary)
+
+                    st.markdown("---")
+
+                # ── 전체 siRNA 비교 요약 ──────────
+                if len(sirnas_to_check) > 1 and summary_all:
+                    st.subheader("📋 전체 siRNA 비교 요약")
+                    st.caption("효율 점수는 높을수록, 위험 off-target은 적을수록 좋은 후보입니다.")
+
+                    df_summary = pd.DataFrame(summary_all)
                     st.dataframe(df_summary, use_container_width=True)
+
+                    # 최적 후보 추천
+                    best = df_summary.sort_values(
+                        ["총 위험 off-target", "효율 점수"],
+                        ascending=[True, False]
+                    ).iloc[0]
+
+                    st.success(
+                        f"🏆 최적 후보: **{best['siRNA']}** "
+                        f"(효율 {best['효율 점수']}점 / "
+                        f"위험 off-target {best['총 위험 off-target']}개)"
+                    )
+
                     st.download_button(
-                        "📥 요약 CSV 다운로드",
+                        "📥 전체 요약 CSV 다운로드",
                         data=df_summary.to_csv(index=False),
                         file_name="offtarget_summary.csv",
                         mime="text/csv"
                     )
-
-with tab3:
-    st.header("Multi-Lane Virtual Gel Simulator")
-    st.info("각 bp 값을 쉼표(,)로 구분해 입력하면 순서대로 Lane 1, 2, 3...에 배치됩니다.")
-
-    # 1. 입력 섹션
     raw_bp_inputs = st.text_input(
         "Enter Band Sizes for each Lane (e.g., 500, 1200, 800)", 
         value="500, 1200, 800",
